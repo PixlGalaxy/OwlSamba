@@ -1,0 +1,8 @@
+abr la mamada tiene que tener:
+
+-Geolocation
+-Web Panel 
+-Ip Banning
+-Guardar Data En SQL 
+-Guardar Historial De Ips Baneadas En JSON 
+-Discord WebHooking 
