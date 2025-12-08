@@ -1,5 +1,6 @@
 import importlib.util
 import ipaddress
+import logging
 import os
 import secrets
 import socket
@@ -8,6 +9,7 @@ import subprocess
 import threading
 from datetime import datetime, timedelta
 from json import dumps as json_dumps
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -21,6 +23,40 @@ BASE_DIR = Path(__file__).resolve().parent
 ENV_PATH = BASE_DIR.parent / ".env"
 
 load_dotenv(ENV_PATH)
+
+LOG_DIR = BASE_DIR.parent / "logs"
+
+
+def setup_logging() -> Tuple[logging.Logger, logging.Logger]:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+    formatter = logging.Formatter(
+        fmt="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    backend_logger = logging.getLogger("backend")
+    backend_logger.setLevel(logging.INFO)
+    if not backend_logger.handlers:
+        backend_handler = RotatingFileHandler(
+            LOG_DIR / "backend.log", maxBytes=1_000_000, backupCount=2, encoding="utf-8"
+        )
+        backend_handler.setFormatter(formatter)
+        backend_logger.addHandler(backend_handler)
+
+    frontend_logger = logging.getLogger("frontend")
+    frontend_logger.setLevel(logging.INFO)
+    if not frontend_logger.handlers:
+        frontend_handler = RotatingFileHandler(
+            LOG_DIR / "frontend.log", maxBytes=1_000_000, backupCount=2, encoding="utf-8"
+        )
+        frontend_handler.setFormatter(formatter)
+        frontend_logger.addHandler(frontend_handler)
+
+    return backend_logger, frontend_logger
+
+
+backend_logger, frontend_logger = setup_logging()
 
 WIN32_AVAILABLE = importlib.util.find_spec("win32evtlog") is not None
 if WIN32_AVAILABLE:
@@ -93,21 +129,21 @@ class LoginPayload(BaseModel):
 
 class SessionManager:
     def __init__(self):
-        self._tokens: Dict[str, datetime] = {}
+        self._tokens: Dict[str, Tuple[datetime, str]] = {}
         self._lock = threading.Lock()
 
-    def issue_token(self) -> str:
+    def issue_token(self, username: str) -> str:
         token = os.urandom(24).hex()
         expires_at = datetime.utcnow() + timedelta(hours=12)
         with self._lock:
-            self._tokens[token] = expires_at
+            self._tokens[token] = (expires_at, username)
         return token
 
     def validate(self, token: str) -> bool:
         now = datetime.utcnow()
         with self._lock:
-            expiry = self._tokens.get(token)
-            if expiry and expiry > now:
+            stored = self._tokens.get(token)
+            if stored and stored[0] > now:
                 return True
             if token in self._tokens:
                 del self._tokens[token]
@@ -116,6 +152,13 @@ class SessionManager:
     def revoke(self, token: str) -> None:
         with self._lock:
             self._tokens.pop(token, None)
+
+    def username_for(self, token: str) -> Optional[str]:
+        with self._lock:
+            stored = self._tokens.get(token)
+            if not stored:
+                return None
+            return stored[1]
 
 
 def bool_from_env(value: Optional[str], default: bool) -> bool:
@@ -476,6 +519,7 @@ class SMBScanner:
                 ],
                 check=False,
             )
+        backend_logger.info("Firewall rule applied for %s", ip)
 
     def _fetch_events(self):
         if not WIN32_AVAILABLE:
@@ -530,9 +574,17 @@ class SMBScanner:
             if attempts >= self.config.threshold:
                 self.store.set_ban_state(ip, True)
                 self.add_to_firewall(ip)
+                backend_logger.info(
+                    "Auto-ban applied to %s after %s attempts (user=%s workstation=%s)",
+                    ip,
+                    attempts,
+                    details["User"],
+                    details["Workstation"],
+                )
             processed += 1
         banned_file = BASE_DIR / "banned_ips.json"
         self.store.export_bans(banned_file)
+        backend_logger.info("Scan complete: %s events processed", processed)
         return processed
 
 
@@ -557,6 +609,7 @@ app.add_middleware(
 @app.on_event("startup")
 def ensure_database_schema():
     store.ensure_schema()
+    backend_logger.info("Database schema verified and ready")
 
 
 def request_is_local(request: Request) -> bool:
@@ -566,6 +619,12 @@ def request_is_local(request: Request) -> bool:
         return ipaddress.ip_address(candidate).is_loopback
     except ValueError:
         return False
+
+
+def client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    candidate = forwarded.split(",")[0].strip() if forwarded else request.client.host
+    return candidate or "unknown"
 
 
 def require_auth(
@@ -590,21 +649,27 @@ def auth_context(request: Request):
 
 
 @app.post("/api/login")
-def login(payload: LoginPayload):
+def login(payload: LoginPayload, request: Request):
     valid_user = config.dashboard_user
     valid_pass = config.dashboard_password
     if not (payload.username and payload.password):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing credentials")
     if not (payload.username == valid_user and secrets_compare(payload.password, valid_pass)):
+        frontend_logger.warning(
+            "Failed login for user '%s' from %s", payload.username, client_ip(request)
+        )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-    token = sessions.issue_token()
+    token = sessions.issue_token(payload.username)
+    frontend_logger.info("Successful login for user '%s' from %s", payload.username, client_ip(request))
     return {"token": token}
 
 
 @app.post("/api/logout")
-def logout(token: Optional[str] = Depends(require_auth)):
+def logout(request: Request, token: Optional[str] = Depends(require_auth)):
     if token:
+        username = sessions.username_for(token) or "unknown"
         sessions.revoke(token)
+        frontend_logger.info("User '%s' logged out from %s", username, client_ip(request))
     return {"status": "logged_out"}
 
 
@@ -640,7 +705,7 @@ def get_bans(
 
 
 @app.post("/api/bans")
-def add_ban(payload: BanPayload, token: Optional[str] = Depends(require_auth)):
+def add_ban(payload: BanPayload, request: Request, token: Optional[str] = Depends(require_auth)):
     try:
         ipaddress.ip_address(payload.ip)
     except ValueError:
@@ -656,13 +721,20 @@ def add_ban(payload: BanPayload, token: Optional[str] = Depends(require_auth)):
         manual=True,
     )
     store.export_bans(BASE_DIR / "banned_ips.json")
+    backend_logger.info(
+        "Manual ban added for %s (%s attempts) by %s",
+        payload.ip,
+        max(payload.attempts, config.threshold),
+        client_ip(request),
+    )
     return {"status": "ok"}
 
 
 @app.delete("/api/bans/{ip}")
-def remove_ban(ip: str, token: Optional[str] = Depends(require_auth)):
+def remove_ban(ip: str, request: Request, token: Optional[str] = Depends(require_auth)):
     store.unban(ip)
     store.export_bans(BASE_DIR / "banned_ips.json")
+    backend_logger.info("IP %s unbanned by %s", ip, client_ip(request))
     return {"status": "unbanned"}
 
 
@@ -672,7 +744,9 @@ def get_settings(token: Optional[str] = Depends(require_auth)):
 
 
 @app.put("/api/settings")
-def update_settings(payload: SettingsPayload, token: Optional[str] = Depends(require_auth)):
+def update_settings(
+    payload: SettingsPayload, request: Request, token: Optional[str] = Depends(require_auth)
+):
     config.whitelist_ips = payload.whitelist_ips
     config.whitelist_domains = payload.whitelist_domains
     config.threshold = payload.threshold
@@ -692,12 +766,20 @@ def update_settings(payload: SettingsPayload, token: Optional[str] = Depends(req
             "WHITELIST_DOMAINS": serialize_list(config.whitelist_domains),
         }
     )
+    frontend_logger.info(
+        "Settings updated by %s: threshold=%s scan_wait=%s event_id=%s",
+        client_ip(request),
+        config.threshold,
+        config.scan_wait,
+        config.event_id,
+    )
     return config.dict()
 
 
 @app.post("/api/scan")
-def trigger_scan(token: Optional[str] = Depends(require_auth)):
+def trigger_scan(request: Request, token: Optional[str] = Depends(require_auth)):
     processed = scanner.run_scan()
+    backend_logger.info("Manual scan triggered from %s (processed=%s)", client_ip(request), processed)
     return {"processed": processed}
 
 
