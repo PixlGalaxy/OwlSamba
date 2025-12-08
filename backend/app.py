@@ -413,6 +413,21 @@ class DataStore:
                     (int(banned), int(banned), datetime.utcnow().isoformat(), ip),
                 )
 
+    def ban_state(self, ip: str) -> Tuple[bool, Optional[datetime]]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT banned, banned_time FROM bans WHERE ip = ?", (ip,)
+            ).fetchone()
+        if not row:
+            return False, None
+        banned_time = None
+        if row["banned_time"]:
+            try:
+                banned_time = datetime.fromisoformat(row["banned_time"])
+            except ValueError:
+                banned_time = None
+        return bool(row["banned"]), banned_time
+
     def unban(self, ip: str) -> None:
         with self._lock, self._connect() as conn:
             conn.execute("UPDATE bans SET banned = 0, banned_time = NULL WHERE ip = ?", (ip,))
@@ -521,6 +536,22 @@ class SMBScanner:
             )
         backend_logger.info("Firewall rule applied for %s", ip)
 
+    def should_block_ip(self, ip: str, attempts: int) -> bool:
+        minimum_attempts = max(10, self.config.threshold)
+        if attempts < minimum_attempts:
+            return False
+
+        already_banned, banned_time = self.store.ban_state(ip)
+        if already_banned:
+            if banned_time and datetime.utcnow() - banned_time < timedelta(seconds=60):
+                backend_logger.debug(
+                    "Skipping re-ban for %s; already banned %ss ago",
+                    ip,
+                    int((datetime.utcnow() - banned_time).total_seconds()),
+                )
+            return False
+        return True
+
     def _fetch_events(self):
         if not WIN32_AVAILABLE:
             return []
@@ -571,7 +602,7 @@ class SMBScanner:
             ip, details = parsed
             occurred_at = datetime.strptime(details["TimeGenerated"], "%a %b %d %H:%M:%S %Y")
             attempts = self.store.record_event(ip, occurred_at, details["Workstation"], details["User"])
-            if attempts >= self.config.threshold:
+            if self.should_block_ip(ip, attempts):
                 self.store.set_ban_state(ip, True)
                 self.add_to_firewall(ip)
                 backend_logger.info(
