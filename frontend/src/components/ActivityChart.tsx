@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { BarChart3 } from 'lucide-react'
-import { StatsResponse } from '../api'
+import type { StatsResponse } from '../api'
 
 export function ActivityChart({ data }: { data: StatsResponse }) {
   const max = useMemo(() => Math.max(...data.timeline.map((t) => t.attempts), 1), [data])

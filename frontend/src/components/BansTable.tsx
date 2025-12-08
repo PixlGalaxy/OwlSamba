@@ -1,6 +1,6 @@
 import { useMemo, useState, FormEvent } from 'react'
 import { ListFilter, Plus, RefreshCcw, Undo2 } from 'lucide-react'
-import { BanFilters, BanRecord } from '../api'
+import type { BanFilters, BanRecord } from '../api'
 
 export function BansTable({
   bans,

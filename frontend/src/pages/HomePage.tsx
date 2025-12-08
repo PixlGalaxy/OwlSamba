@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { CircleDot, Network, ShieldCheck } from 'lucide-react'
-import { fetchStats, StatsResponse } from '../api'
+import { fetchStats } from '../api'
+import type { StatsResponse } from '../api'
 import { StatCard } from '../components/StatCard'
 import { ActivityChart } from '../components/ActivityChart'
 
