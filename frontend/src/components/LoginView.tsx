@@ -1,4 +1,6 @@
-import { FormEvent, useState } from 'react'
+import { useState } from 'react'
+import type { FormEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { LockKeyhole, ShieldCheck } from 'lucide-react'
 import { login } from '../api'
 
@@ -9,6 +11,7 @@ export function LoginView({
   onAuthenticated: (token: string) => void
   requiresAuth: boolean
 }) {
+  const navigate = useNavigate()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -21,6 +24,7 @@ export function LoginView({
     try {
       const token = await login(username, password)
       onAuthenticated(token)
+      navigate('/')
     } catch (err) {
       setError((err as Error).message)
     } finally {
