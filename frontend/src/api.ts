@@ -55,6 +55,13 @@ function authHeaders(token?: string): HeadersInit {
   return headers
 }
 
+export function handleTokenError(error: Error): void {
+  if (error.message.includes('Invalid or expired token')) {
+    localStorage.removeItem('authToken')
+    window.location.href = '/login'
+  }
+}
+
 async function handle<T>(response: Response): Promise<T> {
   if (response.status === 204) return {} as T
 
@@ -72,12 +79,13 @@ async function handle<T>(response: Response): Promise<T> {
     let message = 'Request failed'
     try {
       const data = await response.clone().json()
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       message = (data as any).detail ?? message
     } catch (e) {
       message = await response.text()
     }
-    throw new Error(message || response.statusText)
+    const error = new Error(message || response.statusText)
+    handleTokenError(error)
+    throw error
   }
 
   return parseJson()

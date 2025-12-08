@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -16,6 +17,13 @@ export function LoginView({
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!requiresAuth) {
+      onAuthenticated('local')
+      navigate('/')
+    }
+  }, [requiresAuth, navigate, onAuthenticated])
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -43,11 +51,6 @@ export function LoginView({
           </div>
         </div>
         {error && <p className="mb-4 rounded-xl bg-rose-500/10 px-3 py-2 text-xs sm:text-sm text-rose-300">{error}</p>}
-        {requiresAuth ? null : (
-          <p className="mb-4 rounded-xl bg-emerald-500/10 px-3 py-2 text-xs sm:text-sm text-emerald-200">
-            You are on localhost: authentication is disabled.
-          </p>
-        )}
         <form className="space-y-4" onSubmit={submit}>
           <div>
             <label className="text-xs sm:text-sm text-slate-300 font-medium">Username</label>
