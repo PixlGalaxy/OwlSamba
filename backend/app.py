@@ -13,11 +13,16 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+import bcrypt
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, validator
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from fastapi.responses import JSONResponse
 
 BASE_DIR = Path(__file__).resolve().parent
 ENV_PATH = BASE_DIR.parent / ".env"
@@ -74,13 +79,14 @@ class AppConfig(BaseModel):
     database_file: str = Field(default="DataBase.db")
     hostname: str = Field(default_factory=socket.gethostname)
     dashboard_user: str = Field(default="admin")
-    dashboard_password: str = Field(default="change_me")
+    dashboard_password_hash: str = Field(default="")
     allow_local_bypass: bool = Field(
         default=False,
         description="Allow dashboard access without authentication when requests are local",
     )
     discord_webhook_url: Optional[str] = None
     discord_notification_time: int = Field(default=1440)
+    allowed_origins: List[str] = Field(default_factory=lambda: ["http://localhost:5173", "http://localhost:3000"])
 
     @validator("whitelist_ips", pre=True)
     def parse_whitelist_ips(cls, value):
@@ -167,6 +173,20 @@ def bool_from_env(value: Optional[str], default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def hash_password(password: str) -> str:
+    """Hash a password using bcrypt."""
+    salt = bcrypt.gensalt(rounds=12)
+    return bcrypt.hashpw(password.encode(), salt).decode()
+
+
+def verify_password(password: str, hashed: str) -> bool:
+    """Verify a password against its hash."""
+    try:
+        return bcrypt.checkpw(password.encode(), hashed.encode())
+    except Exception:
+        return False
+
+
 def serialize_list(values: List[str]) -> str:
     return ", ".join(values)
 
@@ -200,6 +220,14 @@ def update_env_file(updates: Dict[str, str]) -> None:
 
 
 def load_config() -> AppConfig:
+    password_env = os.getenv("DASHBOARD_PASSWORD", "change_me")
+    password_hash_env = os.getenv("DASHBOARD_PASSWORD_HASH", "")
+    
+    password_hash = password_hash_env
+    if not password_hash and password_env:
+        password_hash = hash_password(password_env)
+        update_env_file({"DASHBOARD_PASSWORD_HASH": password_hash})
+    
     return AppConfig(
         threshold=int(os.getenv("THRESHOLD", "10")),
         scan_wait=int(os.getenv("SCAN_WAIT", "5")),
@@ -211,10 +239,15 @@ def load_config() -> AppConfig:
         database_file=os.getenv("DATABASE_FILE", "DataBase.db"),
         hostname=os.getenv("HOSTNAME_OVERRIDE", socket.gethostname()),
         dashboard_user=os.getenv("DASHBOARD_USER", "admin"),
-        dashboard_password=os.getenv("DASHBOARD_PASSWORD", "change_me"),
+        dashboard_password_hash=password_hash,
         allow_local_bypass=bool_from_env(os.getenv("ALLOW_LOCAL_BYPASS"), False),
         discord_webhook_url=os.getenv("DISCORD_WEBHOOK_URL"),
         discord_notification_time=int(os.getenv("DISCORD_NOTIFICATION_TIME", "1440")),
+        allowed_origins=[
+            origin.strip() 
+            for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000").split(",")
+            if origin.strip()
+        ],
     )
 
 
@@ -297,7 +330,7 @@ class DataStore:
             database_file=loaded.get("database_file", self.config.database_file),
             hostname=loaded.get("hostname", self.config.hostname),
             dashboard_user=loaded.get("dashboard_user", self.config.dashboard_user),
-            dashboard_password=loaded.get("dashboard_password", self.config.dashboard_password),
+            dashboard_password_hash=loaded.get("dashboard_password_hash", self.config.dashboard_password_hash),
             allow_local_bypass=bool_from_env(
                 loaded.get("allow_local_bypass"), self.config.allow_local_bypass
             ),
@@ -305,6 +338,9 @@ class DataStore:
             discord_notification_time=int(
                 loaded.get("discord_notification_time", self.config.discord_notification_time)
             ),
+            allowed_origins=[
+                origin.strip() for origin in (loaded.get("allowed_origins", "") or "").split(",") if origin.strip()
+            ] or self.config.allowed_origins,
         )
         return self.config
 
@@ -775,14 +811,26 @@ scanner = SMBScanner(store, config)
 scan_scheduler = ScanScheduler(scanner, config, scan_status)
 app = FastAPI(title="OwlSamba API", version="1.0.0")
 
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+# Configurar rate limiter
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    """Handle rate limit exceeded errors with a proper JSON response."""
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Too many requests. Please try again later."},
+    )
+
+# Configurar CORS restrictivo
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin.strip() for origin in allowed_origins if origin.strip()],
+    allow_origins=config.allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"]
-    ,
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 
@@ -830,16 +878,24 @@ def auth_context(request: Request):
 
 
 @app.post("/api/login")
+@limiter.limit("5/minute")
 def login(payload: LoginPayload, request: Request):
-    valid_user = config.dashboard_user
-    valid_pass = config.dashboard_password
+    """Login endpoint with rate limiting (5 attempts per minute)."""
     if not (payload.username and payload.password):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing credentials")
-    if not (payload.username == valid_user and secrets_compare(payload.password, valid_pass)):
+    
+    valid_user = config.dashboard_user
+    valid_pass_hash = config.dashboard_password_hash
+    
+    user_matches = payload.username == valid_user
+    password_matches = user_matches and verify_password(payload.password, valid_pass_hash)
+    
+    if not password_matches:
         frontend_logger.warning(
             "Failed login for user '%s' from %s", payload.username, client_ip(request)
         )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    
     token = sessions.issue_token(payload.username)
     frontend_logger.info("Successful login for user '%s' from %s", payload.username, client_ip(request))
     return {"token": token}
@@ -852,10 +908,6 @@ def logout(request: Request, token: Optional[str] = Depends(require_auth)):
         sessions.revoke(token)
         frontend_logger.info("User '%s' logged out from %s", username, client_ip(request))
     return {"status": "logged_out"}
-
-
-def secrets_compare(left: str, right: str) -> bool:
-    return secrets.compare_digest(left, right)
 
 
 @app.get("/api/stats")
@@ -886,7 +938,9 @@ def get_bans(
 
 
 @app.post("/api/bans")
+@limiter.limit("30/minute")
 def add_ban(payload: BanPayload, request: Request, token: Optional[str] = Depends(require_auth)):
+    """Add a manual ban with rate limiting (30 per minute)."""
     try:
         ipaddress.ip_address(payload.ip)
     except ValueError:
@@ -912,7 +966,9 @@ def add_ban(payload: BanPayload, request: Request, token: Optional[str] = Depend
 
 
 @app.delete("/api/bans/{ip}")
+@limiter.limit("30/minute")
 def remove_ban(ip: str, request: Request, token: Optional[str] = Depends(require_auth)):
+    """Remove a ban with rate limiting (30 per minute)."""
     store.unban(ip)
     store.export_bans(BASE_DIR / "banned_ips.json")
     backend_logger.info("IP %s unbanned by %s", ip, client_ip(request))
@@ -925,9 +981,11 @@ def get_settings(token: Optional[str] = Depends(require_auth)):
 
 
 @app.put("/api/settings")
+@limiter.limit("10/minute")
 def update_settings(
     payload: SettingsPayload, request: Request, token: Optional[str] = Depends(require_auth)
 ):
+    """Update settings with rate limiting (10 per minute)."""
     config.whitelist_ips = payload.whitelist_ips
     config.whitelist_domains = payload.whitelist_domains
     config.threshold = payload.threshold

@@ -3,3 +3,5 @@ uvicorn
 python-dotenv
 pystray
 Pillow
+bcrypt
+slowapi
