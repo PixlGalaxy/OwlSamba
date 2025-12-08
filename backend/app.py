@@ -811,7 +811,6 @@ scanner = SMBScanner(store, config)
 scan_scheduler = ScanScheduler(scanner, config, scan_status)
 app = FastAPI(title="OwlSamba API", version="1.0.0")
 
-# Configurar rate limiter
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 
@@ -824,7 +823,6 @@ def rate_limit_handler(request: Request, exc: RateLimitExceeded):
         content={"detail": "Too many requests. Please try again later."},
     )
 
-# Configurar CORS restrictivo
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.allowed_origins,
