@@ -110,7 +110,10 @@ def _stop_process(proc: Optional[subprocess.Popen]) -> None:
         if os.name != "nt":
             os.killpg(proc.pid, signal.SIGTERM)
         else:
-            proc.terminate()
+            try:
+                proc.send_signal(signal.CTRL_BREAK_EVENT)
+            except Exception:
+                proc.terminate()
         proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
         if os.name != "nt":

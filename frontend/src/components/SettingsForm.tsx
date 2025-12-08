@@ -1,22 +1,28 @@
 import { FormEvent, useState } from 'react'
-import { Settings, ShieldCheck } from 'lucide-react'
-import type { SettingsResponse } from '../api'
+import { Loader2, ScanEye, Settings, ShieldCheck } from 'lucide-react'
+import type { ScanStatus, SettingsResponse } from '../api'
 
 export function SettingsForm({
   settings,
   onSave,
   onScan,
   loading,
+  scanStatus,
 }: {
   settings: SettingsResponse
   onSave: (payload: Partial<SettingsResponse>) => Promise<void>
   onScan: () => Promise<void>
   loading: boolean
+  scanStatus: ScanStatus | null
 }) {
   const [local, setLocal] = useState(settings)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const running = scanStatus?.running
+  const modeLabel = running ? `${scanStatus?.mode || 'auto'} scan running` : 'Scanner idle'
+  const next = scanStatus?.nextScheduled ? new Date(scanStatus.nextScheduled) : null
+  const last = scanStatus?.lastFinished ? new Date(scanStatus.lastFinished) : null
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -112,12 +118,32 @@ export function SettingsForm({
         </button>
         <button
           type="button"
-          disabled={loading}
+          disabled={loading || running}
           onClick={onScan}
           className="rounded-lg bg-slate-800/70 px-4 py-2 text-sm text-slate-200 ring-1 ring-white/10 transition hover:bg-slate-700 disabled:opacity-60"
         >
-          Run scan
+          {running ? (
+            <span className="flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Running...
+            </span>
+          ) : (
+            'Run scan'
+          )}
         </button>
+      </div>
+
+      <div className="mt-3 flex items-center gap-3 rounded-xl bg-slate-900/50 p-4 text-sm text-slate-200 ring-1 ring-white/10">
+        <ScanEye className="text-cyan-300" />
+        <div>
+          <p className="font-semibold text-white">{modeLabel}</p>
+          <p className="text-xs text-slate-400">
+            {running
+              ? 'Scanning now...'
+              : `Next automatic scan ${next ? `at ${next.toLocaleTimeString()}` : 'is being scheduled'}`}
+          </p>
+          {last && !running && <p className="text-xs text-slate-400">Last finished: {last.toLocaleString()}</p>}
+        </div>
       </div>
     </form>
   )
