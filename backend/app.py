@@ -134,13 +134,13 @@ class SessionManager:
 
     def issue_token(self, username: str) -> str:
         token = os.urandom(24).hex()
-        expires_at = datetime.utcnow() + timedelta(hours=12)
+        expires_at = datetime.now() + timedelta(hours=12)
         with self._lock:
             self._tokens[token] = (expires_at, username)
         return token
 
     def validate(self, token: str) -> bool:
-        now = datetime.utcnow()
+        now = datetime.now()
         with self._lock:
             stored = self._tokens.get(token)
             if stored and stored[0] > now:
@@ -334,7 +334,7 @@ class DataStore:
                         user,
                         int(banned),
                         int(banned),
-                        datetime.utcnow().isoformat(),
+                        datetime.now().isoformat(),
                         int(manual),
                         ip,
                     ),
@@ -352,7 +352,7 @@ class DataStore:
                         workstation,
                         user,
                         int(banned),
-                        datetime.utcnow().isoformat() if banned else None,
+                        datetime.now().isoformat() if banned else None,
                         int(manual),
                     ),
                 )
@@ -437,12 +437,12 @@ class DataStore:
             if not result and banned:
                 conn.execute(
                     "INSERT INTO bans(ip, attempts, last_attempt, workstation, last_user, banned, banned_time, manual) VALUES(?, 1, ?, '-', '-', 1, ?, 0)",
-                    (ip, datetime.utcnow().isoformat(), datetime.utcnow().isoformat()),
+                    (ip, datetime.now().isoformat(), datetime.now().isoformat()),
                 )
             elif result:
                 conn.execute(
                     "UPDATE bans SET banned = ?, banned_time = CASE WHEN ? THEN ? ELSE banned_time END WHERE ip = ?",
-                    (int(banned), int(banned), datetime.utcnow().isoformat(), ip),
+                    (int(banned), int(banned), datetime.now().isoformat(), ip),
                 )
 
     def ban_state(self, ip: str) -> Tuple[bool, Optional[datetime]]:
@@ -484,7 +484,7 @@ class DataStore:
         return [dict(row) for row in rows]
 
     def stats(self, days: int) -> Dict[str, object]:
-        lower_bound = datetime.utcnow() - timedelta(days=days)
+        lower_bound = datetime.now() - timedelta(days=days)
         with self._connect() as conn:
             total_banned = conn.execute("SELECT COUNT(*) FROM bans WHERE banned = 1").fetchone()[0]
             recent_banned = conn.execute(
@@ -575,11 +575,11 @@ class SMBScanner:
 
         already_banned, banned_time = self.store.ban_state(ip)
         if already_banned:
-            if banned_time and datetime.utcnow() - banned_time < timedelta(seconds=60):
+            if banned_time and datetime.now() - banned_time < timedelta(seconds=60):
                 backend_logger.debug(
                     "Skipping re-ban for %s; already banned %ss ago",
                     ip,
-                    int((datetime.utcnow() - banned_time).total_seconds()),
+                    int((datetime.now() - banned_time).total_seconds()),
                 )
             return False
         return True
@@ -659,7 +659,7 @@ class ScanStatus:
         self.mode: Optional[str] = None
         self.last_started: Optional[datetime] = None
         self.last_finished: Optional[datetime] = None
-        self.next_scheduled: Optional[datetime] = datetime.utcnow() + timedelta(minutes=scan_wait)
+        self.next_scheduled: Optional[datetime] = datetime.now() + timedelta(minutes=scan_wait)
         self.last_processed: int = 0
         self.scan_wait = scan_wait
         self._lock = threading.Lock()
@@ -670,14 +670,14 @@ class ScanStatus:
                 return False
             self.running = True
             self.mode = mode
-            self.last_started = datetime.utcnow()
+            self.last_started = datetime.now()
             self.last_processed = 0
             return True
 
     def complete(self, processed: int):
         with self._lock:
             self.running = False
-            self.last_finished = datetime.utcnow()
+            self.last_finished = datetime.now()
             self.last_processed = processed
             self.next_scheduled = self.last_finished + timedelta(minutes=self.scan_wait)
             self.mode = None
@@ -685,7 +685,7 @@ class ScanStatus:
     def update_interval(self, minutes: int):
         with self._lock:
             self.scan_wait = minutes
-            now = datetime.utcnow()
+            now = datetime.now()
             self.next_scheduled = now + timedelta(minutes=minutes)
 
     def status(self) -> Dict[str, Optional[object]]:
@@ -703,7 +703,7 @@ class ScanStatus:
         with self._lock:
             if not self.next_scheduled:
                 return float(self.scan_wait * 60)
-            delta = (self.next_scheduled - datetime.utcnow()).total_seconds()
+            delta = (self.next_scheduled - datetime.now()).total_seconds()
             return max(delta, 0)
 
 
@@ -891,7 +891,7 @@ def add_ban(payload: BanPayload, request: Request, token: Optional[str] = Depend
         ipaddress.ip_address(payload.ip)
     except ValueError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid IP")
-    now = datetime.utcnow()
+    now = datetime.now()
     store.upsert_ban(
         payload.ip,
         max(payload.attempts, config.threshold),
