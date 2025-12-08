@@ -34,7 +34,7 @@ export interface SettingsResponse {
   hostname?: string
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? ''
+const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000'
 
 function authHeaders(token?: string): HeadersInit {
   const headers: HeadersInit = {
@@ -48,17 +48,30 @@ function authHeaders(token?: string): HeadersInit {
 
 async function handle<T>(response: Response): Promise<T> {
   if (response.status === 204) return {} as T
+
+  const parseJson = async () => {
+    try {
+      return (await response.json()) as T
+    } catch (err) {
+      const text = await response.text()
+      const message = text?.startsWith('<') ? 'API response no es JSON válido' : text
+      throw new Error(message || (err as Error).message)
+    }
+  }
+
   if (!response.ok) {
     let message = 'Request failed'
     try {
-      const data = await response.json()
-      message = data.detail ?? message
+      const data = await response.clone().json()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      message = (data as any).detail ?? message
     } catch (e) {
       message = await response.text()
     }
     throw new Error(message || response.statusText)
   }
-  return response.json() as Promise<T>
+
+  return parseJson()
 }
 
 export async function getAuthContext(): Promise<AuthContextResponse> {
