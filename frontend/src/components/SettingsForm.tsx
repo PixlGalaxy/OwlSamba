@@ -1,6 +1,6 @@
 import { FormEvent, useState } from 'react'
 import { Settings, ShieldCheck } from 'lucide-react'
-import { SettingsResponse } from '../api'
+import type { SettingsResponse } from '../api'
 
 export function SettingsForm({
   settings,

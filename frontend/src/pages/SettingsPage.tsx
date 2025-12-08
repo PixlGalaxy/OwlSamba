@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { getSettings, SettingsResponse, triggerScan, updateSettings } from '../api'
+import { getSettings, triggerScan, updateSettings } from '../api'
+import type { SettingsResponse } from '../api'
 import { SettingsForm } from '../components/SettingsForm'
 
 export function SettingsPage({ token }: { token: string | null }) {

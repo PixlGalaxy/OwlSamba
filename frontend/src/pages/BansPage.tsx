@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { BanFilters, BanRecord, addBan, fetchBans, unban } from '../api'
+import { addBan, fetchBans, unban } from '../api'
+import type { BanFilters, BanRecord } from '../api'
 import { BansTable } from '../components/BansTable'
 
 export function BansPage({ token }: { token: string | null }) {
