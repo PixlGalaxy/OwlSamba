@@ -1,4 +1,5 @@
-import { FormEvent, useState } from 'react'
+import { useState } from 'react'
+import type { FormEvent } from 'react'
 import { Loader2, ScanEye, Settings, ShieldCheck } from 'lucide-react'
 import type { ScanStatus, SettingsResponse } from '../api'
 
