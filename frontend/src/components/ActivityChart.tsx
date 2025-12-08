@@ -10,8 +10,8 @@ export function ActivityChart({ data }: { data: StatsResponse }) {
       <div className="mb-4 flex items-center gap-3 text-sm text-slate-300">
         <BarChart3 className="text-cyan-300" />
         <div>
-          <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Actividad</p>
-          <p className="font-semibold text-white">Intentos bloqueados (últimos {data.window} días)</p>
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Activity</p>
+          <p className="font-semibold text-white">Blocked attempts (last {data.window} days)</p>
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">

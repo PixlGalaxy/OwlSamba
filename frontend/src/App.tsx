@@ -35,7 +35,7 @@ function AppRouter() {
   if (!auth.context) {
     return (
       <div className="app-shell flex min-h-screen items-center justify-center bg-surface px-4 text-slate-300">
-        Cargando contexto...
+        Loading context...
       </div>
     )
   }
@@ -85,7 +85,7 @@ function Layout({ children, auth }: { children: React.ReactNode; auth: ReturnTyp
   return (
     <div className="app-shell min-h-screen bg-surface px-4 py-6 text-slate-100">
       <div className="mx-auto flex max-w-6xl flex-col gap-6">
-        <Navigation onLogout={() => auth.saveToken(null)} />
+        <Navigation onLogout={auth.logout} />
         {children}
       </div>
     </div>

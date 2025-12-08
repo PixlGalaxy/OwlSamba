@@ -30,7 +30,7 @@ export function SettingsPage({ token }: { token: string | null }) {
     await triggerScan(token)
   }
 
-  if (!settings) return <p className="text-slate-300">Cargando configuración...</p>
+  if (!settings) return <p className="text-slate-300">Loading configuration...</p>
 
   return (
     <div className="space-y-4">

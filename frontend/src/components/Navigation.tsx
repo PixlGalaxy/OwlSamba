@@ -1,7 +1,7 @@
 import { useLocation, Link } from 'react-router-dom'
 import { Home, ShieldOff, Settings, ShieldCheck, LogOut } from 'lucide-react'
 
-export function Navigation({ onLogout }: { onLogout: () => void }) {
+export function Navigation({ onLogout }: { onLogout: () => Promise<void> | void }) {
   const location = useLocation()
   const links = [
     { to: '/', label: 'Home', icon: Home },
@@ -38,7 +38,7 @@ export function Navigation({ onLogout }: { onLogout: () => void }) {
           )
         })}
         <button
-          onClick={onLogout}
+          onClick={() => onLogout?.()}
           className="flex items-center gap-2 rounded-xl px-4 py-2 text-slate-300 transition hover:bg-white/5"
         >
           <LogOut size={18} />

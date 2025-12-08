@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getAuthContext } from '../api'
+import { getAuthContext, logout as apiLogout } from '../api'
 
 export function useAuthContext() {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('authToken'))
@@ -26,6 +26,17 @@ export function useAuthContext() {
     setToken(value)
   }
 
-  return { token, context, error, saveToken }
+  const logout = async () => {
+    if (token) {
+      try {
+        await apiLogout(token)
+      } catch (err) {
+        console.error('Failed to revoke token', err)
+      }
+    }
+    saveToken(null)
+  }
+
+  return { token, context, error, saveToken, logout }
 }
 

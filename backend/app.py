@@ -39,6 +39,10 @@ class AppConfig(BaseModel):
     hostname: str = Field(default_factory=socket.gethostname)
     dashboard_user: str = Field(default="admin")
     dashboard_password: str = Field(default="change_me")
+    allow_local_bypass: bool = Field(
+        default=False,
+        description="Allow dashboard access without authentication when requests are local",
+    )
     discord_webhook_url: Optional[str] = None
     discord_notification_time: int = Field(default=1440)
 
@@ -131,6 +135,7 @@ def load_config() -> AppConfig:
         hostname=os.getenv("HOSTNAME_OVERRIDE", socket.gethostname()),
         dashboard_user=os.getenv("DASHBOARD_USER", "admin"),
         dashboard_password=os.getenv("DASHBOARD_PASSWORD", "change_me"),
+        allow_local_bypass=bool_from_env(os.getenv("ALLOW_LOCAL_BYPASS"), False),
         discord_webhook_url=os.getenv("DISCORD_WEBHOOK_URL"),
         discord_notification_time=int(os.getenv("DISCORD_NOTIFICATION_TIME", "1440")),
     )
@@ -141,14 +146,15 @@ class DataStore:
         self.db_path = db_path
         self.config = config
         self._lock = threading.Lock()
-        self._init_db()
+        self.ensure_schema()
 
     def _connect(self):
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
 
-    def _init_db(self):
+    def ensure_schema(self):
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.execute(
                 """
@@ -213,6 +219,9 @@ class DataStore:
             hostname=loaded.get("hostname", self.config.hostname),
             dashboard_user=loaded.get("dashboard_user", self.config.dashboard_user),
             dashboard_password=loaded.get("dashboard_password", self.config.dashboard_password),
+            allow_local_bypass=bool_from_env(
+                loaded.get("allow_local_bypass"), self.config.allow_local_bypass
+            ),
             discord_webhook_url=loaded.get("discord_webhook_url", self.config.discord_webhook_url),
             discord_notification_time=int(
                 loaded.get("discord_notification_time", self.config.discord_notification_time)
@@ -509,6 +518,11 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+def ensure_database_schema():
+    store.ensure_schema()
+
+
 def request_is_local(request: Request) -> bool:
     forwarded = request.headers.get("x-forwarded-for")
     candidate = forwarded.split(",")[0].strip() if forwarded else request.client.host
@@ -520,19 +534,23 @@ def request_is_local(request: Request) -> bool:
 
 def require_auth(
     request: Request, credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme)
-):
-    if request_is_local(request):
-        return
+) -> Optional[str]:
+    if config.allow_local_bypass and request_is_local(request):
+        return None
     if not credentials or credentials.scheme.lower() != "bearer":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
     token = credentials.credentials
     if not sessions.validate(token):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+    return token
 
 
 @app.get("/api/auth/context")
 def auth_context(request: Request):
-    return {"requiresAuth": not request_is_local(request), "host": config.hostname}
+    requires_auth = True
+    if config.allow_local_bypass and request_is_local(request):
+        requires_auth = False
+    return {"requiresAuth": requires_auth, "host": config.hostname}
 
 
 @app.post("/api/login")
@@ -547,12 +565,19 @@ def login(payload: LoginPayload):
     return {"token": token}
 
 
+@app.post("/api/logout")
+def logout(token: Optional[str] = Depends(require_auth)):
+    if token:
+        sessions.revoke(token)
+    return {"status": "logged_out"}
+
+
 def secrets_compare(left: str, right: str) -> bool:
     return secrets.compare_digest(left, right)
 
 
 @app.get("/api/stats")
-def get_stats(days: int = 7, _: None = Depends(require_auth)):
+def get_stats(days: int = 7, token: Optional[str] = Depends(require_auth)):
     days = max(1, min(days, 30))
     data = store.stats(days)
     data.update({"host": config.hostname, "window": days})
@@ -566,7 +591,7 @@ def get_bans(
     end_date: Optional[str] = None,
     sort_by: str = "last_attempt",
     sort_order: str = "desc",
-    _: None = Depends(require_auth),
+    token: Optional[str] = Depends(require_auth),
 ):
     filters = BanFilter(
         min_attempts=min_attempts,
@@ -579,7 +604,7 @@ def get_bans(
 
 
 @app.post("/api/bans")
-def add_ban(payload: BanPayload, _: None = Depends(require_auth)):
+def add_ban(payload: BanPayload, token: Optional[str] = Depends(require_auth)):
     try:
         ipaddress.ip_address(payload.ip)
     except ValueError:
@@ -599,19 +624,19 @@ def add_ban(payload: BanPayload, _: None = Depends(require_auth)):
 
 
 @app.delete("/api/bans/{ip}")
-def remove_ban(ip: str, _: None = Depends(require_auth)):
+def remove_ban(ip: str, token: Optional[str] = Depends(require_auth)):
     store.unban(ip)
     store.export_bans(BASE_DIR / "banned_ips.json")
     return {"status": "unbanned"}
 
 
 @app.get("/api/settings")
-def get_settings(_: None = Depends(require_auth)):
+def get_settings(token: Optional[str] = Depends(require_auth)):
     return store.load_settings().dict()
 
 
 @app.put("/api/settings")
-def update_settings(payload: SettingsPayload, _: None = Depends(require_auth)):
+def update_settings(payload: SettingsPayload, token: Optional[str] = Depends(require_auth)):
     config.whitelist_ips = payload.whitelist_ips
     config.whitelist_domains = payload.whitelist_domains
     config.threshold = payload.threshold
@@ -624,7 +649,7 @@ def update_settings(payload: SettingsPayload, _: None = Depends(require_auth)):
 
 
 @app.post("/api/scan")
-def trigger_scan(_: None = Depends(require_auth)):
+def trigger_scan(token: Optional[str] = Depends(require_auth)):
     processed = scanner.run_scan()
     return {"processed": processed}
 

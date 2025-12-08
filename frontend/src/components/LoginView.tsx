@@ -41,12 +41,12 @@ export function LoginView({
         {error && <p className="mb-4 rounded-xl bg-rose-500/10 px-3 py-2 text-sm text-rose-300">{error}</p>}
         {requiresAuth ? null : (
           <p className="mb-3 rounded-xl bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
-            Estás en localhost: autenticación deshabilitada.
+            You are on localhost: authentication is disabled.
           </p>
         )}
         <form className="space-y-4" onSubmit={submit}>
           <div>
-            <label className="text-sm text-slate-300">Usuario</label>
+            <label className="text-sm text-slate-300">Username</label>
             <input
               className="mt-1 w-full rounded-xl bg-slate-900/60 px-3 py-2 text-white ring-1 ring-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-400"
               value={username}
@@ -56,7 +56,7 @@ export function LoginView({
             />
           </div>
           <div>
-            <label className="text-sm text-slate-300">Contraseña</label>
+            <label className="text-sm text-slate-300">Password</label>
             <input
               type="password"
               className="mt-1 w-full rounded-xl bg-slate-900/60 px-3 py-2 text-white ring-1 ring-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-400"
@@ -70,11 +70,11 @@ export function LoginView({
             disabled={loading}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 px-4 py-3 font-semibold text-white shadow-lg shadow-cyan-500/20 hover:from-cyan-400 hover:to-blue-400 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <ShieldCheck size={18} /> {loading ? 'Verificando...' : 'Entrar'}
+            <ShieldCheck size={18} /> {loading ? 'Verifying...' : 'Sign in'}
           </button>
         </form>
         <p className="mt-4 text-center text-xs text-slate-500">
-          El panel solo requiere inicio de sesión cuando no estás en localhost.
+          The dashboard requires sign-in only when local authentication bypass is disabled.
         </p>
       </div>
     </div>

@@ -54,7 +54,7 @@ async function handle<T>(response: Response): Promise<T> {
       return (await response.json()) as T
     } catch (err) {
       const text = await response.text()
-      const message = text?.startsWith('<') ? 'API response no es JSON válido' : text
+      const message = text?.startsWith('<') ? 'API response is not valid JSON' : text
       throw new Error(message || (err as Error).message)
     }
   }
@@ -87,6 +87,14 @@ export async function login(username: string, password: string): Promise<string>
   })
   const data = await handle<{ token: string }>(res)
   return data.token
+}
+
+export async function logout(token: string | null): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/logout`, {
+    method: 'POST',
+    headers: authHeaders(token || undefined),
+  })
+  await handle(res)
 }
 
 export async function fetchStats(token: string | null, days: number): Promise<StatsResponse> {
