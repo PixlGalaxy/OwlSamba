@@ -8,6 +8,7 @@ services through an Exit button.
 
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -71,7 +72,12 @@ def _start_backend() -> Optional[subprocess.Popen]:
         str(API_PORT),
     ]
     try:
-        return subprocess.Popen(cmd, cwd=ROOT)
+        return subprocess.Popen(
+            cmd,
+            cwd=ROOT,
+            start_new_session=True,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
+        )
     except FileNotFoundError:
         print("Uvicorn is not installed; cannot start backend.")
         return None
@@ -84,7 +90,12 @@ def _start_frontend() -> Optional[subprocess.Popen]:
         return None
     cmd = [npm, "run", "dev", "--", "--host", "0.0.0.0", "--port", str(UI_PORT)]
     try:
-        return subprocess.Popen(cmd, cwd=ROOT / "frontend")
+        return subprocess.Popen(
+            cmd,
+            cwd=ROOT / "frontend",
+            start_new_session=True,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
+        )
     except FileNotFoundError:
         print("Unable to launch frontend dev server.")
         return None
@@ -96,10 +107,19 @@ def _stop_process(proc: Optional[subprocess.Popen]) -> None:
     if proc.poll() is not None:
         return
     try:
-        proc.terminate()
+        if os.name != "nt":
+            os.killpg(proc.pid, signal.SIGTERM)
+        else:
+            try:
+                proc.send_signal(signal.CTRL_BREAK_EVENT)
+            except Exception:
+                proc.terminate()
         proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
-        proc.kill()
+        if os.name != "nt":
+            os.killpg(proc.pid, signal.SIGKILL)
+        else:
+            proc.kill()
     except Exception:
         proc.kill()
 

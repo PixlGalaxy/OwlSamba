@@ -1,5 +1,4 @@
-import { useMemo, useState } from 'react'
-import type { FormEvent } from 'react'
+import { useMemo, useState, FormEvent } from 'react'
 import { ListFilter, Plus, RefreshCcw, Undo2 } from 'lucide-react'
 import type { BanFilters, BanRecord } from '../api'
 

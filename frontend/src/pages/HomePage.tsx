@@ -1,20 +1,46 @@
 import { useEffect, useState } from 'react'
-import { CircleDot, Network, ShieldCheck } from 'lucide-react'
-import { fetchStats } from '../api'
-import type { StatsResponse } from '../api'
+import { AlarmClock, CircleDot, Network, ShieldCheck } from 'lucide-react'
+import { fetchStats, getScanStatus } from '../api'
+import type { ScanStatus, StatsResponse } from '../api'
 import { StatCard } from '../components/StatCard'
 import { ActivityChart } from '../components/ActivityChart'
+import { ScanStatusCard } from '../components/ScanStatusCard'
 
 export function HomePage({ token, host }: { token: string | null; host: string }) {
   const [stats, setStats] = useState<StatsResponse | null>(null)
   const [error, setError] = useState('')
   const [days, setDays] = useState(7)
+  const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null)
 
   useEffect(() => {
-    fetchStats(token, days)
-      .then(setStats)
-      .catch((err) => setError(err.message))
+    let cancelled = false
+    const loadStats = () => {
+      fetchStats(token, days)
+        .then((data) => !cancelled && setStats(data))
+        .catch((err) => !cancelled && setError(err.message))
+    }
+    loadStats()
+    const timer = setInterval(loadStats, 10000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
   }, [token, days])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadStatus = () => {
+      getScanStatus(token)
+        .then((data) => !cancelled && setScanStatus(data))
+        .catch(() => {})
+    }
+    loadStatus()
+    const timer = setInterval(loadStatus, 5000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [token])
 
   return (
     <div className="space-y-6">
@@ -37,6 +63,16 @@ export function HomePage({ token, host }: { token: string | null; host: string }
               helper="Adjust the window for more context"
             />
             <StatCard icon={Network} title="Window" value={`${days} days`} helper="You can view up to 30 days" />
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <ScanStatusCard status={scanStatus} />
+            <div className="flex items-center gap-3 rounded-xl bg-slate-900/50 p-4 ring-1 ring-white/5">
+              <AlarmClock className="text-cyan-300" />
+              <div className="text-sm text-slate-300">
+                <p className="font-semibold text-white">Timeline window</p>
+                <p>Change the window to view attempts over time.</p>
+              </div>
+            </div>
           </div>
           <div className="flex items-center gap-3 text-sm text-slate-300">
             <span>Time window:</span>

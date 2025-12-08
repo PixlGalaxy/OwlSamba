@@ -365,16 +365,48 @@ class DataStore:
         user: str = "-",
     ) -> int:
         with self._lock, self._connect() as conn:
+            existing = conn.execute(
+                "SELECT attempts, banned, last_attempt FROM bans WHERE ip = ?", (ip,)
+            ).fetchone()
+
+            existing_last_attempt: Optional[datetime] = None
+            attempts = 1
+            banned = False
+
+            if existing:
+                attempts = existing["attempts"] + 1
+                banned = bool(existing["banned"])
+                if existing["last_attempt"]:
+                    try:
+                        existing_last_attempt = datetime.fromisoformat(existing["last_attempt"])
+                    except ValueError:
+                        existing_last_attempt = None
+
+            if existing_last_attempt and occurred_at <= existing_last_attempt:
+                backend_logger.debug(
+                    "Skipping duplicate event for %s at %s (last processed %s)",
+                    ip,
+                    occurred_at.isoformat(),
+                    existing_last_attempt.isoformat(),
+                )
+                return existing["attempts"] if existing else 1
+
+            already_recorded = conn.execute(
+                "SELECT 1 FROM events WHERE ip = ? AND occurred_at = ? LIMIT 1",
+                (ip, occurred_at.isoformat()),
+            ).fetchone()
+            if already_recorded:
+                backend_logger.debug(
+                    "Event already stored for %s at %s; ignoring for counters",
+                    ip,
+                    occurred_at.isoformat(),
+                )
+                return existing["attempts"] if existing else 1
+
             conn.execute(
                 "INSERT INTO events(ip, occurred_at, workstation, user) VALUES(?, ?, ?, ?)",
                 (ip, occurred_at.isoformat(), workstation, user),
             )
-            existing = conn.execute("SELECT attempts, banned FROM bans WHERE ip = ?", (ip,)).fetchone()
-            attempts = 1
-            banned = False
-            if existing:
-                attempts = existing["attempts"] + 1
-                banned = bool(existing["banned"])
             conn.execute(
                 """
                 INSERT INTO bans(ip, attempts, last_attempt, workstation, last_user, banned, banned_time, manual)
@@ -589,12 +621,14 @@ class SMBScanner:
             return None
         return None
 
-    def run_scan(self) -> int:
+    def run_scan(self, mode: str = "manual") -> int:
         if not WIN32_AVAILABLE:
+            backend_logger.info("Scan skipped (%s mode); win32evtlog unavailable", mode)
             return 0
         self.resolve_whitelist()
         events = self._fetch_events()
         processed = 0
+        backend_logger.info("Scan started (%s mode) with %s events", mode, len(events))
         for event in events:
             parsed = self._parse_event(event)
             if not parsed:
@@ -615,15 +649,130 @@ class SMBScanner:
             processed += 1
         banned_file = BASE_DIR / "banned_ips.json"
         self.store.export_bans(banned_file)
-        backend_logger.info("Scan complete: %s events processed", processed)
+        backend_logger.info("Scan complete (%s mode): %s events processed", mode, processed)
         return processed
+
+
+class ScanStatus:
+    def __init__(self, scan_wait: int):
+        self.running: bool = False
+        self.mode: Optional[str] = None
+        self.last_started: Optional[datetime] = None
+        self.last_finished: Optional[datetime] = None
+        self.next_scheduled: Optional[datetime] = datetime.utcnow() + timedelta(minutes=scan_wait)
+        self.last_processed: int = 0
+        self.scan_wait = scan_wait
+        self._lock = threading.Lock()
+
+    def begin(self, mode: str) -> bool:
+        with self._lock:
+            if self.running:
+                return False
+            self.running = True
+            self.mode = mode
+            self.last_started = datetime.utcnow()
+            self.last_processed = 0
+            return True
+
+    def complete(self, processed: int):
+        with self._lock:
+            self.running = False
+            self.last_finished = datetime.utcnow()
+            self.last_processed = processed
+            self.next_scheduled = self.last_finished + timedelta(minutes=self.scan_wait)
+            self.mode = None
+
+    def update_interval(self, minutes: int):
+        with self._lock:
+            self.scan_wait = minutes
+            now = datetime.utcnow()
+            self.next_scheduled = now + timedelta(minutes=minutes)
+
+    def status(self) -> Dict[str, Optional[object]]:
+        with self._lock:
+            return {
+                "running": self.running,
+                "mode": self.mode,
+                "lastStarted": self.last_started.isoformat() if self.last_started else None,
+                "lastFinished": self.last_finished.isoformat() if self.last_finished else None,
+                "nextScheduled": self.next_scheduled.isoformat() if self.next_scheduled else None,
+                "lastProcessed": self.last_processed,
+            }
+
+    def seconds_until_next(self) -> float:
+        with self._lock:
+            if not self.next_scheduled:
+                return float(self.scan_wait * 60)
+            delta = (self.next_scheduled - datetime.utcnow()).total_seconds()
+            return max(delta, 0)
+
+
+class ScanScheduler:
+    def __init__(self, scanner: SMBScanner, config: AppConfig, status: ScanStatus):
+        self.scanner = scanner
+        self.config = config
+        self.status = status
+        self._stop_event = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+
+    def _run_wrapper(self, mode: str, already_started: bool = False):
+        processed = 0
+        if not already_started:
+            if not self.status.begin(mode):
+                backend_logger.info("Skipping %s scan; another scan is in progress", mode)
+                return
+        try:
+            backend_logger.info("%s scan initiated", mode.title())
+            processed = self.scanner.run_scan(mode)
+        finally:
+            self.status.complete(processed)
+            backend_logger.info(
+                "%s scan finished (processed=%s). Next scan at %s",
+                mode.title(),
+                processed,
+                self.status.next_scheduled.isoformat() if self.status.next_scheduled else "unscheduled",
+            )
+
+    def trigger_manual(self) -> bool:
+        if not self.status.begin("manual"):
+            return False
+        threading.Thread(target=self._run_wrapper, args=("manual", True), daemon=True).start()
+        return True
+
+    def start(self):
+        if self._thread and self._thread.is_alive():
+            return
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+        backend_logger.info(
+            "Automatic scan scheduler started; next scan at %s",
+            self.status.next_scheduled.isoformat() if self.status.next_scheduled else "unscheduled",
+        )
+
+    def stop(self):
+        self._stop_event.set()
+        if self._thread:
+            self._thread.join(timeout=1)
+
+    def _loop(self):
+        while not self._stop_event.is_set():
+            wait_seconds = self.status.seconds_until_next()
+            if self._stop_event.wait(wait_seconds):
+                break
+            self._run_wrapper("auto")
+
+    def update_interval(self, minutes: int):
+        self.status.update_interval(minutes)
+        backend_logger.info("Scan interval updated to %s minutes", minutes)
 
 
 security_scheme = HTTPBearer(auto_error=False)
 sessions = SessionManager()
 config = load_config()
 store = DataStore(BASE_DIR / config.database_file, config)
+scan_status = ScanStatus(config.scan_wait)
 scanner = SMBScanner(store, config)
+scan_scheduler = ScanScheduler(scanner, config, scan_status)
 app = FastAPI(title="OwlSamba API", version="1.0.0")
 
 allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
@@ -641,6 +790,7 @@ app.add_middleware(
 def ensure_database_schema():
     store.ensure_schema()
     backend_logger.info("Database schema verified and ready")
+    scan_scheduler.start()
 
 
 def request_is_local(request: Request) -> bool:
@@ -786,6 +936,7 @@ def update_settings(
     config.log_name = payload.log_name
     config.event_id = payload.event_id
     store.persist_settings()
+    scan_scheduler.update_interval(config.scan_wait)
     update_env_file(
         {
             "THRESHOLD": str(config.threshold),
@@ -809,9 +960,16 @@ def update_settings(
 
 @app.post("/api/scan")
 def trigger_scan(request: Request, token: Optional[str] = Depends(require_auth)):
-    processed = scanner.run_scan()
-    backend_logger.info("Manual scan triggered from %s (processed=%s)", client_ip(request), processed)
-    return {"processed": processed}
+    backend_logger.info("Manual scan requested from %s", client_ip(request))
+    started = scan_scheduler.trigger_manual()
+    if not started:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Scan already in progress")
+    return {"status": "started"}
+
+
+@app.get("/api/scan/status")
+def scan_status_endpoint(token: Optional[str] = Depends(require_auth)):
+    return scan_status.status()
 
 
 @app.get("/api/health")

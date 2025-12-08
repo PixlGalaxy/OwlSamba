@@ -34,6 +34,15 @@ export interface SettingsResponse {
   hostname?: string
 }
 
+export interface ScanStatus {
+  running: boolean
+  mode: string | null
+  lastStarted: string | null
+  lastFinished: string | null
+  nextScheduled: string | null
+  lastProcessed: number | null
+}
+
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000'
 
 function authHeaders(token?: string): HeadersInit {
@@ -166,6 +175,13 @@ export async function triggerScan(token: string | null): Promise<number> {
     method: 'POST',
     headers: authHeaders(token || undefined),
   })
-  const data = await handle<{ processed: number }>(res)
-  return data.processed
+  const data = await handle<{ status: string }>(res)
+  return data.status === 'started' ? 1 : 0
+}
+
+export async function getScanStatus(token: string | null): Promise<ScanStatus> {
+  const res = await fetch(`${API_BASE}/api/scan/status`, {
+    headers: authHeaders(token || undefined),
+  })
+  return handle<ScanStatus>(res)
 }

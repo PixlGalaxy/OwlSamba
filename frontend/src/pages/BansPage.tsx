@@ -20,6 +20,8 @@ export function BansPage({ token }: { token: string | null }) {
 
   useEffect(() => {
     load()
+    const timer = setInterval(load, 10000)
+    return () => clearInterval(timer)
   }, [token, filters])
 
   const handleUnban = async (ip: string) => {
