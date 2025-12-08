@@ -1,1 +1,5 @@
-requests
+fastapi
+uvicorn
+python-dotenv
+pystray
+Pillow
