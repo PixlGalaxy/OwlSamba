@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import React from 'react'
 import './App.css'
 import './index.css'
 import { Navigation } from './components/Navigation'
@@ -13,7 +14,7 @@ function ProtectedRoute({
   token,
   requiresAuth,
 }: {
-  children: JSX.Element
+  children: React.ReactElement
   token: string | null
   requiresAuth: boolean
 }) {
@@ -26,16 +27,16 @@ function AppRouter() {
 
   if (auth.error) {
     return (
-      <div className="app-shell flex min-h-screen items-center justify-center bg-surface px-4">
-        <div className="rounded-2xl bg-card/70 p-6 text-center text-rose-200 ring-1 ring-white/5">{auth.error}</div>
+      <div className="app-shell flex min-h-screen items-center justify-center bg-surface px-4 py-8">
+        <div className="rounded-2xl bg-card/70 p-4 sm:p-6 text-center text-xs sm:text-sm text-rose-200 ring-1 ring-white/5 max-w-md">{auth.error}</div>
       </div>
     )
   }
 
   if (!auth.context) {
     return (
-      <div className="app-shell flex min-h-screen items-center justify-center bg-surface px-4 text-slate-300">
-        Loading context...
+      <div className="app-shell flex min-h-screen items-center justify-center bg-surface px-4 py-8 text-slate-300">
+        <p className="text-sm sm:text-base">Loading context...</p>
       </div>
     )
   }
@@ -83,10 +84,12 @@ function AppRouter() {
 
 function Layout({ children, auth }: { children: React.ReactNode; auth: ReturnType<typeof useAuthContext> }) {
   return (
-    <div className="app-shell min-h-screen bg-surface px-4 py-6 text-slate-100">
-      <div className="mx-auto flex max-w-6xl flex-col gap-6">
+    <div className="app-shell min-h-screen bg-surface px-3 sm:px-4 py-4 sm:py-6 text-slate-100">
+      <div className="mx-auto flex max-w-6xl flex-col gap-4 sm:gap-6">
         <Navigation onLogout={auth.logout} />
-        {children}
+        <main className="min-w-0">
+          {children}
+        </main>
       </div>
     </div>
   )

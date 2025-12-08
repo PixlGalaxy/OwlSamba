@@ -42,11 +42,11 @@ export function SettingsPage({ token }: { token: string | null }) {
     refreshStatus()
   }
 
-  if (!settings) return <p className="text-slate-300">Loading configuration...</p>
+  if (!settings) return <p className="text-slate-300 text-sm">Loading configuration...</p>
 
   return (
-    <div className="space-y-4">
-      {error && <p className="rounded-xl bg-rose-500/10 px-4 py-3 text-rose-200">{error}</p>}
+    <div className="space-y-3 sm:space-y-4">
+      {error && <p className="rounded-xl bg-rose-500/10 px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-rose-200">{error}</p>}
       <SettingsForm
         settings={settings}
         onSave={handleSave}

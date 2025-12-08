@@ -35,8 +35,8 @@ export function BansPage({ token }: { token: string | null }) {
   }
 
   return (
-    <div className="space-y-4">
-      {error && <p className="rounded-xl bg-rose-500/10 px-4 py-3 text-rose-200">{error}</p>}
+    <div className="space-y-3 sm:space-y-4">
+      {error && <p className="rounded-xl bg-rose-500/10 px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-rose-200">{error}</p>}
       <BansTable
         bans={bans}
         filters={filters}
