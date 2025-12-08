@@ -1,4 +1,4 @@
-import type { ElementType } from 'react'
+import { ElementType } from 'react'
 
 export function StatCard({ icon: Icon, title, value, helper }: { icon: ElementType; title: string; value: string; helper?: string }) {
   return (

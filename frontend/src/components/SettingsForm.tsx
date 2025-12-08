@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import type { FormEvent } from 'react'
+import { FormEvent, useState } from 'react'
 import { Settings, ShieldCheck } from 'lucide-react'
 import type { SettingsResponse } from '../api'
 

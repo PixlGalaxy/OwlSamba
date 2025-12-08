@@ -49,13 +49,15 @@ class AppConfig(BaseModel):
     @validator("whitelist_ips", pre=True)
     def parse_whitelist_ips(cls, value):
         if isinstance(value, str):
-            return [ip.strip() for ip in value.split(",") if ip.strip()]
+            cleaned = value.replace("\"", "")
+            return [ip.strip() for ip in cleaned.split(",") if ip.strip()]
         return value or []
 
     @validator("whitelist_domains", pre=True)
     def parse_whitelist_domains(cls, value):
         if isinstance(value, str):
-            return [domain.strip() for domain in value.split(",") if domain.strip()]
+            cleaned = value.replace("\"", "")
+            return [domain.strip() for domain in cleaned.split(",") if domain.strip()]
         return value or []
 
 
@@ -120,6 +122,38 @@ def bool_from_env(value: Optional[str], default: bool) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def serialize_list(values: List[str]) -> str:
+    return ", ".join(values)
+
+
+def update_env_file(updates: Dict[str, str]) -> None:
+    existing_lines: List[str] = []
+    if ENV_PATH.exists():
+        existing_lines = ENV_PATH.read_text(encoding="utf-8").splitlines()
+
+    new_lines: List[str] = []
+    remaining = dict(updates)
+    for line in existing_lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            new_lines.append(line)
+            continue
+        if "=" not in line:
+            new_lines.append(line)
+            continue
+        key, _, _ = line.partition("=")
+        key = key.strip()
+        if key in remaining:
+            new_lines.append(f"{key}={remaining.pop(key)}")
+        else:
+            new_lines.append(line)
+
+    for key, value in remaining.items():
+        new_lines.append(f"{key}={value}")
+
+    ENV_PATH.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
 
 
 def load_config() -> AppConfig:
@@ -195,6 +229,8 @@ class DataStore:
     def persist_settings(self):
         with self._connect() as conn:
             for key, value in self.config.dict().items():
+                if isinstance(value, list):
+                    value = ", ".join(value)
                 conn.execute(
                     "INSERT OR REPLACE INTO settings(key, value) VALUES(?, ?)",
                     (key, str(value)),
@@ -645,6 +681,17 @@ def update_settings(payload: SettingsPayload, token: Optional[str] = Depends(req
     config.log_name = payload.log_name
     config.event_id = payload.event_id
     store.persist_settings()
+    update_env_file(
+        {
+            "THRESHOLD": str(config.threshold),
+            "SCAN_WAIT": str(config.scan_wait),
+            "BAN_IPS": str(config.ban_ips),
+            "LOG_NAME": config.log_name,
+            "EVENT_ID": str(config.event_id),
+            "WHITELIST_IPS": serialize_list(config.whitelist_ips),
+            "WHITELIST_DOMAINS": serialize_list(config.whitelist_domains),
+        }
+    )
     return config.dict()
 
 
