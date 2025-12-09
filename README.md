@@ -51,6 +51,26 @@ python backend/tray.py
 ```
 The tray respects `API_PORT` and `UI_PORT` from `.env` and attempts to open the dashboard in your default browser.
 
+## Updates
+
+OwlSamba has an automatic update system that:
+- **Checks for new versions** from GitHub releases on startup
+- **Protects your data** by preserving `.env`, database, and logs
+- **Notifies you** when updates are available
+- **One-click installation** from the launcher UI
+
+### How updates work
+1. Launcher checks GitHub for new releases
+2. If a new version is available, shows "Update Available" button
+3. Click to download and apply the update
+4. Your configuration and database are automatically preserved
+5. Restart to apply changes
+
+### Versioning
+- Local version stored in `VERSION` file
+- Remote versions checked from GitHub releases (format: `v0.x.x`)
+- See `update/README.md` for technical details
+
 ## Key features
 - Authenticated dashboard with optional localhost bypass toggle
 - Automatic and manual scans with real-time status updates and next-scan timing
