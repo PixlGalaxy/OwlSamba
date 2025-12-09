@@ -22,6 +22,20 @@ BACKEND_DIR = ROOT / "backend"
 FRONTEND_DIR = ROOT / "frontend"
 UPDATE_DIR = ROOT / "update"
 
+# Map package names to their import names
+PACKAGE_TO_IMPORT = {
+    "fastapi": "fastapi",
+    "uvicorn": "uvicorn",
+    "python-dotenv": "dotenv",
+    "pyqt5": "PyQt5",
+    "bcrypt": "bcrypt",
+    "slowapi": "slowapi",
+    "tendo": "tendo",
+    "Pillow": "PIL",
+    "requests": "requests",
+    "packaging": "packaging",
+}
+
 sys.path.insert(0, str(UPDATE_DIR))
 
 
@@ -62,7 +76,7 @@ class InstallWorker(QObject):
             self.finished.emit(False)
     
     def _install_python(self):
-        """Install Python requirements."""
+        """Install Python requirements - only missing packages."""
         self.python_progress.emit(10)
         
         requirements_file = BACKEND_DIR / "requirements.txt"
@@ -71,54 +85,84 @@ class InstallWorker(QObject):
             return
         
         try:
-            result = subprocess.run(
-                [sys.executable, "-m", "pip", "check"],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
+            # Parse requirements.txt
+            requirements = self._parse_requirements(requirements_file)
+            if not requirements:
+                self.finished.emit(False)
+                return
             
-            if result.returncode == 0:
+            # Check which packages are missing
+            missing = self._check_missing_packages(requirements)
+            
+            if not missing:
+                # All packages already installed
                 self.python_progress.emit(100)
                 self.finished.emit(True)
                 return
             
-            self.python_progress.emit(20)
+            # Install missing packages one by one
+            progress_step = 80 / len(missing)  # 10-90% for installation
+            current_progress = 10
             
-            process = subprocess.Popen(
-                [sys.executable, "-m", "pip", "install", "-r", str(requirements_file)],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
+            for package in missing:
+                process = subprocess.Popen(
+                    [sys.executable, "-m", "pip", "install", package],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                
+                process.wait(timeout=60)
+                
+                if process.returncode != 0:
+                    self.finished.emit(False)
+                    return
+                
+                current_progress += progress_step
+                self.python_progress.emit(int(current_progress))
             
-            process.wait(timeout=300)
-            
-            if process.returncode == 0:
-                self.python_progress.emit(100)
-                self.finished.emit(True)
-            else:
-                self.finished.emit(False)
+            self.python_progress.emit(100)
+            self.finished.emit(True)
         
-        except subprocess.TimeoutExpired:
-            self.finished.emit(False)
         except Exception:
             self.finished.emit(False)
     
+    def _parse_requirements(self, requirements_file):
+        """Parse requirements.txt and return list of package names."""
+        try:
+            packages = []
+            with open(requirements_file, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        # Extract package name (before version specifiers)
+                        pkg = line.split('==')[0].split('>=')[0].split('<=')[0].split('>')[0].split('<')[0].split('!=')[0].strip()
+                        packages.append(pkg)
+            return packages
+        except Exception:
+            return []
+    
+    def _check_missing_packages(self, packages):
+        """Check which packages from list are not installed."""
+        missing = []
+        for package in packages:
+            # Get the import name from mapping, or derive it
+            import_name = PACKAGE_TO_IMPORT.get(package, package.replace('-', '_').lower())
+            try:
+                __import__(import_name)
+            except ImportError:
+                missing.append(package)
+        return missing
+    
     def _install_node(self):
-        """Install Node modules."""
+        """Install Node modules - only if needed."""
         self.node_progress.emit(10)
         
-        node_modules = FRONTEND_DIR / "node_modules"
         package_json = FRONTEND_DIR / "package.json"
+        node_modules = FRONTEND_DIR / "node_modules"
         
         if not package_json.exists():
             self.finished.emit(False)
-            return
-        
-        if node_modules.exists() and (node_modules / ".bin").exists():
-            self.node_progress.emit(100)
-            self.finished.emit(True)
             return
         
         try:
@@ -135,6 +179,16 @@ class InstallWorker(QObject):
             
             self.node_progress.emit(20)
             
+            # Check if node_modules exists and seems complete
+            needs_install = not self._check_node_modules_valid(node_modules, package_json)
+            
+            if not needs_install:
+                # node_modules already installed and valid
+                self.node_progress.emit(100)
+                self.finished.emit(True)
+                return
+            
+            # Install/update node modules
             process = subprocess.Popen(
                 ["npm", "install"],
                 cwd=FRONTEND_DIR,
@@ -143,7 +197,13 @@ class InstallWorker(QObject):
                 text=True
             )
             
-            process.wait(timeout=300)
+            # Simulate progress while waiting
+            progress = 20
+            while process.poll() is None:
+                time.sleep(1)
+                progress += 3
+                if progress < 95:
+                    self.node_progress.emit(progress)
             
             if process.returncode == 0:
                 self.node_progress.emit(100)
@@ -155,6 +215,27 @@ class InstallWorker(QObject):
             self.finished.emit(False)
         except Exception:
             self.finished.emit(False)
+    
+    def _check_node_modules_valid(self, node_modules_dir, package_json):
+        """Check if node_modules exists and has expected structure."""
+        try:
+            # If node_modules doesn't exist, need to install
+            if not node_modules_dir.exists():
+                return False
+            
+            # If .bin directory doesn't exist, need to install
+            if not (node_modules_dir / ".bin").exists():
+                return False
+            
+            # Check if package-lock.json is older than package.json (modified)
+            package_lock = FRONTEND_DIR / "package-lock.json"
+            if package_lock.exists():
+                if package_json.stat().st_mtime > package_lock.stat().st_mtime:
+                    return False
+            
+            return True
+        except Exception:
+            return False
 
 
 class LauncherWindow(QMainWindow):
