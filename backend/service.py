@@ -17,8 +17,9 @@ from typing import Dict, Optional
 from datetime import datetime
 
 from dotenv import load_dotenv
-from PIL import Image, ImageDraw
-import pystray
+from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QMenu
+from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor, QPen
+from PyQt5.QtCore import Qt, QSize
 
 ROOT = Path(__file__).resolve().parent.parent
 LOGS_DIR = ROOT / "logs"
@@ -230,14 +231,26 @@ class ServiceManager:
             self.stop()
 
 
-def _create_shield_icon(size: int = 128) -> Image.Image:
-    """Create a shield icon for the system tray."""
-    stroke = max(2, size // 16)
-    padding = stroke * 2
-    img = Image.new("RGBA", (size, size), (255, 255, 255, 0))
-    draw = ImageDraw.Draw(img)
-
-    outline = [
+def _create_shield_icon(size: int = 128) -> QIcon:
+    """Load shield icon from PNG file."""
+    icon_path = ROOT / "images" / "shield.png"
+    if icon_path.exists():
+        return QIcon(str(icon_path))
+    
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    
+    stroke_width = max(2, size // 16)
+    padding = stroke_width * 2
+    
+    pen = QPen(QColor(15, 23, 42))
+    pen.setWidth(stroke_width)
+    painter.setPen(pen)
+    
+    outline_points = [
         (padding, padding + size * 0.1),
         (size / 2, padding),
         (size - padding, padding + size * 0.1),
@@ -245,26 +258,45 @@ def _create_shield_icon(size: int = 128) -> Image.Image:
         (size / 2, size - padding),
         (padding, size * 0.6),
     ]
-    draw.line(outline + [outline[0]], fill=(15, 23, 42, 255), width=stroke, joint="curve")
-
-    check = [
+    
+    for i in range(len(outline_points)):
+        p1 = outline_points[i]
+        p2 = outline_points[(i + 1) % len(outline_points)]
+        painter.drawLine(int(p1[0]), int(p1[1]), int(p2[0]), int(p2[1]))
+    
+    pen.setColor(QColor(52, 211, 153))
+    painter.setPen(pen)
+    
+    check_points = [
         (size * 0.34, size * 0.55),
         (size * 0.46, size * 0.68),
         (size * 0.68, size * 0.38),
     ]
-    draw.line(check, fill=(52, 211, 153, 255), width=stroke, joint="curve")
+    
+    for i in range(len(check_points) - 1):
+        p1 = check_points[i]
+        p2 = check_points[i + 1]
+        painter.drawLine(int(p1[0]), int(p1[1]), int(p2[0]), int(p2[1]))
+    
+    painter.end()
+    
+    return QIcon(pixmap)
 
-    return img
+
+def _load_icon(name: str) -> QIcon:
+    """Load an icon from the images directory."""
+    icon_path = ROOT / "images" / f"{name}.png"
+    if icon_path.exists():
+        return QIcon(str(icon_path))
+    return QIcon()
 
 
-def _open_browser(manager: 'ServiceManager', icon: pystray.Icon, item: pystray.MenuItem) -> None:
+def _open_browser() -> None:
     """Open the dashboard using Edge in app mode (kiosk-like window)."""
     url = f"http://localhost:{UI_PORT}"
     logger.info(f"Opening dashboard at {url}")
     
     try:
-        icon_path = ROOT / "frontend" / "public" / "shield-favicon.svg"
-        
         edge_path = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
         if os.path.exists(edge_path):
             subprocess.Popen([
@@ -279,14 +311,14 @@ def _open_browser(manager: 'ServiceManager', icon: pystray.Icon, item: pystray.M
         webbrowser.open(url)
 
 
-def _stop_service(manager: 'ServiceManager', icon: pystray.Icon, item: pystray.MenuItem) -> None:
+def _stop_service(manager: 'ServiceManager') -> None:
     """Stop the service and exit."""
     logger.info("User requested service shutdown")
-    icon.stop()
     manager.stop()
+    QApplication.instance().quit()
 
 
-def _restart_service(manager: 'ServiceManager', icon: pystray.Icon, item: pystray.MenuItem) -> None:
+def _restart_service(manager: 'ServiceManager') -> None:
     """Restart the service."""
     logger.info("User requested service restart")
     manager.stop()
@@ -305,24 +337,40 @@ def run_with_tray(manager: 'ServiceManager') -> None:
     health_thread = threading.Thread(target=manager.health_check, daemon=True)
     health_thread.start()
     
-    menu = pystray.Menu(
-        pystray.MenuItem("Open Dashboard", lambda icon, item: _open_browser(manager, icon, item), default=True),
-        pystray.MenuItem("Restart Service", lambda icon, item: _restart_service(manager, icon, item)),
-        pystray.MenuItem("Exit", lambda icon, item: _stop_service(manager, icon, item)),
-    )
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
     
-    icon = pystray.Icon("OwlSamba", _create_shield_icon(), "OwlSamba", menu=menu)
+    tray = QSystemTrayIcon(app)
+    tray.setIcon(_create_shield_icon())
+    tray.setToolTip("OwlSamba")
+    
+    menu = QMenu()
+    
+    open_action = menu.addAction(_load_icon("dashboard"), "Open Dashboard")
+    open_action.triggered.connect(_open_browser)
+    
+    restart_action = menu.addAction(_load_icon("refresh"), "Restart Service")
+    restart_action.triggered.connect(lambda: _restart_service(manager))
+    
+    menu.addSeparator()
+    
+    exit_action = menu.addAction(_load_icon("exit"), "Exit")
+    exit_action.triggered.connect(lambda: _stop_service(manager))
+    
+    tray.setContextMenu(menu)
+    tray.show()
     
     def signal_handler(signum, frame):
         logger.info(f"Received signal {signum}, shutting down...")
-        icon.stop()
         manager.stop()
+        app.quit()
     
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
     
     try:
-        icon.run()
+        app.exec()
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received")
         manager.stop()
