@@ -7,3 +7,4 @@ slowapi
 tendo
 Pillow
 requests
+packaging
