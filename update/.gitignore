@@ -1,9 +1,0 @@
-.env
-logs/*.log
-logs/*.log.*
-logs/*.log-*
-node_modules
-backend/.venv
-frontend/node_modules
-__pycache__
-.DS_Store
