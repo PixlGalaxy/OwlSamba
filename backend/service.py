@@ -80,6 +80,7 @@ class ServiceManager:
         }
         self.stop_event = threading.Event()
         self.lock = threading.Lock()
+        self.shutting_down = False
     
     def _start_backend(self) -> bool:
         """Start FastAPI backend with Uvicorn."""
@@ -96,15 +97,24 @@ class ServiceManager:
                 "--log-level",
                 "info"
             ]
+            
+            startupinfo = None
+            if os.name == "nt":
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+            
             self.processes["backend"] = subprocess.Popen(
                 cmd,
                 cwd=ROOT,
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                startupinfo=startupinfo
             )
             logger.info(f"Backend started (PID: {self.processes['backend'].pid})")
             return True
         except Exception as e:
-            logger.error(f"Failed to start backend: {e}")
+            logger.error(f"Failed to start Backend: {e}")
             return False
     
     def _start_frontend(self) -> bool:
@@ -116,10 +126,19 @@ class ServiceManager:
         
         try:
             cmd = [npm, "run", "dev", "--", "--host", "0.0.0.0", "--port", str(UI_PORT)]
+            
+            startupinfo = None
+            if os.name == "nt":
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+            
             self.processes["frontend"] = subprocess.Popen(
                 cmd,
                 cwd=ROOT / "frontend",
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                startupinfo=startupinfo
             )
             logger.info(f"Frontend started (PID: {self.processes['frontend'].pid})")
             return True
@@ -128,7 +147,7 @@ class ServiceManager:
             return False
     
     def _stop_process(self, name: str) -> None:
-        """Stop a process gracefully."""
+        """Stop a process gracefully without corrupting data."""
         proc = self.processes.get(name)
         if proc is None:
             return
@@ -137,25 +156,47 @@ class ServiceManager:
             logger.debug(f"{name} already stopped")
             return
         
-        try:
-            logger.info(f"Stopping {name} (PID: {proc.pid})")
-            if os.name == "nt":
-                try:
-                    proc.send_signal(signal.CTRL_BREAK_EVENT)
-                except Exception:
-                    proc.terminate()
-            else:
+        pid = proc.pid
+        logger.info(f"Stopping {name} (PID: {pid})...")
+        
+        if os.name == "nt":
+            try:
+                subprocess.run(
+                    ["taskkill", "/PID", str(pid), "/T"],
+                    capture_output=True,
+                    timeout=6,
+                    check=False
+                )
+                time.sleep(0.5)
+                
+                if proc.poll() is None:
+                    logger.warning(f"{name} still running, forcing kill...")
+                    subprocess.run(
+                        ["taskkill", "/PID", str(pid), "/T", "/F"],
+                        capture_output=True,
+                        timeout=2,
+                        check=False
+                    )
+                    time.sleep(0.3)
+                
+                if proc.poll() is not None:
+                    logger.info(f"{name} stopped successfully")
+                else:
+                    logger.warning(f"{name} may still be running")
+            except Exception as e:
+                logger.error(f"Error stopping {name}: {e}")
+        else:
+            try:
                 proc.terminate()
-            
-            proc.wait(timeout=5)
-            logger.info(f"{name} stopped successfully")
-        except subprocess.TimeoutExpired:
-            logger.warning(f"{name} did not stop gracefully, killing...")
-            proc.kill()
-            proc.wait()
-        except Exception as e:
-            logger.error(f"Error stopping {name}: {e}")
-            proc.kill()
+                proc.wait(timeout=5)
+                logger.info(f"{name} stopped gracefully")
+            except subprocess.TimeoutExpired:
+                logger.warning(f"{name} did not stop gracefully, killing...")
+                proc.kill()
+                try:
+                    proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    logger.error(f"Could not stop {name} after kill")
     
     def start(self) -> bool:
         with self.lock:
@@ -181,6 +222,7 @@ class ServiceManager:
     
     def stop(self) -> None:
         with self.lock:
+            self.shutting_down = True
             logger.info("=" * 60)
             logger.info(f"OwlSamba Service Stopping ({datetime.now().isoformat()})")
             logger.info("=" * 60)
@@ -195,6 +237,9 @@ class ServiceManager:
         while not self.stop_event.is_set():
             try:
                 with self.lock:
+                    if self.shutting_down:
+                        continue
+                    
                     if self.processes["backend"] and self.processes["backend"].poll() is not None:
                         logger.error("Backend process died, attempting restart...")
                         self._start_backend()
@@ -314,8 +359,23 @@ def _open_browser() -> None:
 def _stop_service(manager: 'ServiceManager') -> None:
     """Stop the service and exit."""
     logger.info("User requested service shutdown")
-    manager.stop()
-    QApplication.instance().quit()
+    
+    def shutdown_thread():
+        try:
+            manager.stop()
+        except Exception as e:
+            logger.error(f"Error during shutdown: {e}")
+        finally:
+            time.sleep(0.2)
+            try:
+                QApplication.instance().quit()
+            except Exception as e:
+                logger.error(f"Error quitting app: {e}")
+    
+    thread = threading.Thread(target=shutdown_thread, daemon=False)
+    thread.daemon = False
+    thread.start()
+    thread.join(timeout=5)
 
 
 def _restart_service(manager: 'ServiceManager') -> None:
@@ -373,6 +433,9 @@ def run_with_tray(manager: 'ServiceManager') -> None:
         app.exec()
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received")
+        manager.stop()
+    finally:
+        logger.info("Application closing")
         manager.stop()
 
 
