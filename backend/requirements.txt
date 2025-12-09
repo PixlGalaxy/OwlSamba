@@ -1,7 +1,9 @@
 fastapi
 uvicorn
 python-dotenv
-pystray
-Pillow
+pyqt5
 bcrypt
 slowapi
+tendo
+Pillow
+requests
