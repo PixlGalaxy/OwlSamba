@@ -1,9 +1,23 @@
+# .NET build output
+bin/
+obj/
+publish/
+*.user
+*.suo
+.vs/
+TestResults/
+
+# Local data from dev/demo runs (OWLSAMBA_DATA_DIR)
+*.db
+*.db-wal
+*.db-shm
+*.pfx
+local-endpoint.json
+
+# Legacy v1 secrets, in case old files are copied in for migration testing
 .env
-logs/*.log
-logs/*.log.*
-logs/*.log-*
-node_modules
-backend/.venv
-frontend/node_modules
-__pycache__
+config.env
+banned_ips.json
+IP_History.json
+
 .DS_Store
