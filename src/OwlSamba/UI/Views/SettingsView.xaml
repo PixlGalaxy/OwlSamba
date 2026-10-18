@@ -1,0 +1,273 @@
+<UserControl x:Class="OwlSamba.UI.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="clr-namespace:OwlSamba.UI">
+    <UserControl.Resources>
+        <!-- label + description on the left, control on the right -->
+        <Style x:Key="Row" TargetType="HeaderedContentControl">
+            <Setter Property="Margin" Value="0,0,0,14"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="HeaderedContentControl">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                <TextBlock Text="{Binding Header, RelativeSource={RelativeSource TemplatedParent}}" Foreground="{StaticResource TextBrush}" TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}" Style="{StaticResource Caption}" Margin="0,2,0,0"
+                                           Visibility="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource Vis}}"/>
+                            </StackPanel>
+                            <ContentPresenter Grid.Column="1" ContentSource="Content" VerticalAlignment="Center"/>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="Num" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="Width" Value="96"/>
+            <Setter Property="TextAlignment" Value="Right"/>
+            <Setter Property="FontFamily" Value="{StaticResource DisplayFont}"/>
+        </Style>
+        <Style x:Key="Section" TargetType="Border" BasedOn="{StaticResource Card}">
+            <Setter Property="Margin" Value="0,0,0,18"/>
+        </Style>
+        <Style x:Key="Toggle" TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}">
+            <Setter Property="Margin" Value="0,0,0,12"/>
+        </Style>
+    </UserControl.Resources>
+
+    <DockPanel>
+        <!-- save bar -->
+        <Border DockPanel.Dock="Bottom" Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource AccentBrush}" BorderThickness="0,2,0,0"
+                Padding="18,12" Margin="0,14,0,0" Visibility="{Binding Dirty, Converter={StaticResource Vis}}">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Style="{StaticResource SecondaryButton}" Content="DISCARD" Command="{Binding RevertCommand}"/>
+                    <Button Style="{StaticResource PrimaryButton}" ui:Ext.Icon="Save" Content="SAVE &amp; APPLY" Command="{Binding SaveCommand}" Margin="10,0,0,0"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <ui:LucideIcon Kind="Info" Foreground="{StaticResource AccentBrush}"/>
+                    <TextBlock Text="You have unsaved changes. They apply instantly, no service restart needed." Margin="10,0,0,0" VerticalAlignment="Center"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,10,0">
+            <Grid DataContext="{Binding}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition/>
+                    <ColumnDefinition Width="18"/>
+                    <ColumnDefinition/>
+                </Grid.ColumnDefinitions>
+
+                <!-- ================================================= left column -->
+                <StackPanel>
+                    <Border Style="{StaticResource Section}">
+                        <StackPanel DataContext="{Binding Form}">
+                            <ContentControl Style="{StaticResource CardTitle}" Content="BAN POLICY"/>
+                            <HeaderedContentControl Style="{StaticResource Row}" Header="Attempts before a temporary block" Tag="Failures in a row that trigger the block">
+                                <TextBox Style="{StaticResource Num}" Text="{Binding BurstThreshold, UpdateSourceTrigger=PropertyChanged}"/>
+                            </HeaderedContentControl>
+                            <HeaderedContentControl Style="{StaticResource Row}" Header="Detection window (seconds)" Tag="Time span in which those failures must happen">
+                                <TextBox Style="{StaticResource Num}" Text="{Binding BurstWindowSeconds, UpdateSourceTrigger=PropertyChanged}"/>
+                            </HeaderedContentControl>
+                            <HeaderedContentControl Style="{StaticResource Row}" Header="Temporary block duration (minutes)">
+                                <TextBox Style="{StaticResource Num}" Text="{Binding TempBanMinutes, UpdateSourceTrigger=PropertyChanged}"/>
+                            </HeaderedContentControl>
+                            <HeaderedContentControl Style="{StaticResource Row}" Header="Accumulated attempts for a permanent ban" Tag="Attempts keep adding up across temporary blocks">
+                                <TextBox Style="{StaticResource Num}" Text="{Binding PermanentBanThreshold, UpdateSourceTrigger=PropertyChanged}"/>
+                            </HeaderedContentControl>
+                            <HeaderedContentControl Style="{StaticResource Row}" Header="Accumulation window (hours)" Tag="0 = attempts never expire">
+                                <TextBox Style="{StaticResource Num}" Text="{Binding AccumulationWindowHours, UpdateSourceTrigger=PropertyChanged}"/>
+                            </HeaderedContentControl>
+                            <Border Background="{StaticResource AccentSoftBrush}" Padding="12,10" Margin="0,2,0,16" CornerRadius="2">
+                                <DockPanel>
+                                    <ui:LucideIcon Kind="Zap" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Top" Margin="0,1,10,0"/>
+                                    <TextBlock Text="{Binding DataContext.PolicySummary, RelativeSource={RelativeSource AncestorType=UserControl}}" TextWrapping="Wrap" Foreground="{StaticResource TextBrush}"/>
+                                </DockPanel>
+                            </Border>
+                            <CheckBox Style="{StaticResource Toggle}" IsChecked="{Binding EnableBanning}" Content="Block in Windows Firewall (off = monitor only)"/>
+                            <CheckBox Style="{StaticResource Toggle}" IsChecked="{Binding KillSmbSessionsOnBan}" Content="Close the IP's open SMB sessions when banning it" Margin="0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Section}">
+                        <StackPanel>
+                            <ContentControl Style="{StaticResource CardTitle}" Content="REAL-TIME DETECTION"/>
+                            <StackPanel DataContext="{Binding Form}">
+                                <CheckBox Style="{StaticResource Toggle}" IsChecked="{Binding MonitorSecurityLog}" Content="Security log · event 4625 (failed logon)"/>
+                                <CheckBox Style="{StaticResource Toggle}" IsChecked="{Binding MonitorSmbServerLog}" Content="SMBServer/Security · event 551 (SMB authentication failure)"/>
+                                <CheckBox Style="{StaticResource Toggle}" IsChecked="{Binding AutoEnableAuditPolicy}" Content="Automatically enable failed-logon auditing"/>
+                                <CheckBox Style="{StaticResource Toggle}" IsChecked="{Binding AlertOnSuccessAfterFailures}" Content="Alert when an IP with failures logs on successfully"/>
+                                <CheckBox Style="{StaticResource Toggle}" IsChecked="{Binding BanOnSuccessAfterFailures}" Content="…and ban it permanently right away"
+                                          IsEnabled="{Binding AlertOnSuccessAfterFailures}" Margin="50,0,0,12"/>
+                                <HeaderedContentControl Style="{StaticResource Row}" Header="Alert look-back window (minutes)" Margin="0">
+                                    <TextBox Style="{StaticResource Num}" Text="{Binding SuccessAfterFailuresLookbackMinutes, UpdateSourceTrigger=PropertyChanged}"/>
+                                </HeaderedContentControl>
+                            </StackPanel>
+                            <Rectangle Height="1" Fill="{StaticResource LineBrush}" Margin="0,16"/>
+                            <TextBlock Text="SOURCE STATUS" Style="{StaticResource Overline}" Margin="0,0,0,10"/>
+                            <ItemsControl ItemsSource="{Binding Shell.Status.Sources}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,0,0,8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Ellipse Width="7" Height="7" Fill="{Binding Active, Converter={StaticResource StatusBrush}}" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Text="{Binding Name}"/>
+                                                <TextBlock Text="{Binding Error}" Style="{StaticResource Caption}" Foreground="{StaticResource DangerBrush}"
+                                                           Visibility="{Binding Error, Converter={StaticResource Vis}}"/>
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="2" Text="{Binding EventsSeen, StringFormat={}{0} events}" Style="{StaticResource Caption}" VerticalAlignment="Center"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                <Ellipse Width="7" Height="7" Fill="{Binding Shell.Status.AuditPolicyOk, Converter={StaticResource StatusBrush}}" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding Shell.Status.AuditPolicyInfo}" Style="{StaticResource Label}"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <Ellipse Width="7" Height="7" Fill="{Binding Shell.Status.FirewallAllProfilesOn, Converter={StaticResource StatusBrush}}" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                <TextBlock Style="{StaticResource Label}" Text="{Binding Shell.Status.FirewallError, TargetNullValue='Firewall de Windows activo en todos los perfiles'}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Section}">
+                        <StackPanel>
+                            <ContentControl Style="{StaticResource CardTitle}" Content="NOTIFICATIONS"/>
+                            <StackPanel DataContext="{Binding Form}">
+                                <CheckBox Style="{StaticResource Toggle}" IsChecked="{Binding DiscordEnabled}" Content="Send alerts to Discord"/>
+                                <TextBox Text="{Binding DiscordWebhookUrl, UpdateSourceTrigger=PropertyChanged}" ui:Ext.Placeholder="https://discord.com/api/webhooks/…"
+                                         IsEnabled="{Binding DiscordEnabled}" Margin="0,0,0,12" FontFamily="{StaticResource MonoFont}" FontSize="12"/>
+                                <CheckBox Style="{StaticResource Toggle}" IsChecked="{Binding DiscordNotifyTempBans}" Content="Temporary bans" IsEnabled="{Binding DiscordEnabled}"/>
+                                <CheckBox Style="{StaticResource Toggle}" IsChecked="{Binding DiscordNotifyPermanentBans}" Content="Permanent bans" IsEnabled="{Binding DiscordEnabled}"/>
+                                <CheckBox Style="{StaticResource Toggle}" IsChecked="{Binding DiscordNotifySuspiciousLogons}" Content="Suspicious successful logons" IsEnabled="{Binding DiscordEnabled}"/>
+                            </StackPanel>
+                            <Button Style="{StaticResource SecondaryButton}" ui:Ext.Icon="Bell" Content="SEND TEST" Command="{Binding TestDiscordCommand}" HorizontalAlignment="Left"/>
+                            <Rectangle Height="1" Fill="{StaticResource LineBrush}" Margin="0,16"/>
+                            <TextBlock Text="DESKTOP (THIS USER ONLY)" Style="{StaticResource Overline}" Margin="0,0,0,10"/>
+                            <CheckBox Style="{StaticResource Toggle}" IsChecked="{Binding BanNotifications}" Content="Windows notifications on bans and alerts"/>
+                            <CheckBox Style="{StaticResource Toggle}" IsChecked="{Binding MinimizeToTray}" Content="Keep running in the system tray when the window is closed"/>
+                            <CheckBox Style="{StaticResource Toggle}" IsChecked="{Binding TrayAutostart}" Content="Start OwlSamba in the tray when signing in" Margin="0"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- ================================================= right column -->
+                <StackPanel Grid.Column="2">
+                    <Border Style="{StaticResource Section}">
+                        <StackPanel>
+                            <ContentControl Style="{StaticResource CardTitle}" Content="WEB DASHBOARD"/>
+                            <StackPanel DataContext="{Binding Form}">
+                                <CheckBox Style="{StaticResource Toggle}" IsChecked="{Binding WebDashboardEnabled}" Content="Enable the web dashboard (remote access with login)"/>
+                                <HeaderedContentControl Style="{StaticResource Row}" Header="Port">
+                                    <TextBox Style="{StaticResource Num}" Text="{Binding WebDashboardPort, UpdateSourceTrigger=PropertyChanged}"/>
+                                </HeaderedContentControl>
+                                <CheckBox Style="{StaticResource Toggle}" IsChecked="{Binding WebDashboardHttps}" Content="HTTPS (auto-generated self-signed certificate)"/>
+                                <HeaderedContentControl Style="{StaticResource Row}" Header="Username">
+                                    <TextBox Text="{Binding WebDashboardUser, UpdateSourceTrigger=PropertyChanged}" Width="200"/>
+                                </HeaderedContentControl>
+                                <HeaderedContentControl Style="{StaticResource Row}" Header="Displayed host name" Tag="Empty = real machine name">
+                                    <TextBox Text="{Binding HostnameOverride, UpdateSourceTrigger=PropertyChanged}" Width="200"/>
+                                </HeaderedContentControl>
+                            </StackPanel>
+                            <TextBlock Text="PASSWORD" Style="{StaticResource Overline}" Margin="0,4,0,8"/>
+                            <Border Background="{StaticResource WarnSoftBrush}" Padding="10,8" Margin="0,0,0,10" CornerRadius="2"
+                                    Visibility="{Binding PasswordSet, Converter={StaticResource Vis}, ConverterParameter=invert}">
+                                <TextBlock Text="No password yet: nobody can sign in to the web dashboard until you set one." TextWrapping="Wrap" Foreground="{StaticResource WarnBrush}"/>
+                            </Border>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition/>
+                                    <ColumnDefinition Width="10"/>
+                                    <ColumnDefinition/>
+                                </Grid.ColumnDefinitions>
+                                <PasswordBox x:Name="Pw1" ToolTip="New password (at least 10 characters)"/>
+                                <PasswordBox x:Name="Pw2" Grid.Column="2" ToolTip="Repeat password"/>
+                            </Grid>
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                <Button Style="{StaticResource SecondaryButton}" ui:Ext.Icon="KeyRound" Content="SET PASSWORD" Click="SetPassword_Click"/>
+                                <Button Style="{StaticResource GhostButton}" ui:Ext.Icon="ExternalLink" Content="OPEN DASHBOARD" Command="{Binding OpenWebDashboardCommand}" Margin="8,0,0,0"
+                                        Visibility="{Binding Shell.Status.WebDashboardRunning, Converter={StaticResource Vis}}"/>
+                            </StackPanel>
+                            <TextBlock Style="{StaticResource Caption}" Margin="0,10,0,0" Text="{Binding Shell.Status.WebDashboardUrl, StringFormat=Listening on {0}}"
+                                       Visibility="{Binding Shell.Status.WebDashboardUrl, Converter={StaticResource Vis}}"/>
+                            <TextBlock Style="{StaticResource Caption}" Margin="0,4,0,0"
+                                       Text="Failed dashboard sign-ins also count as brute-force attempts."/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Section}">
+                        <StackPanel>
+                            <ContentControl Style="{StaticResource CardTitle}" Content="GEOLOCATION"/>
+                            <CheckBox Style="{StaticResource Toggle}" DataContext="{Binding Form}" IsChecked="{Binding GeoIpEnabled}" Content="Show country and ISP of attacking IPs"/>
+                            <TextBlock Style="{StaticResource Caption}" Text="Uses ip-api.com: attacking public IPs are sent to that service to look up their location. Private IPs are labeled locally."/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Section}">
+                        <StackPanel>
+                            <ContentControl Style="{StaticResource CardTitle}" Content="DATA"/>
+                            <HeaderedContentControl Style="{StaticResource Row}" Header="Keep attempts (days)" Tag="IPs and bans are always kept" DataContext="{Binding Form}">
+                                <TextBox Style="{StaticResource Num}" Text="{Binding RetentionDays, UpdateSourceTrigger=PropertyChanged}"/>
+                            </HeaderedContentControl>
+                            <TextBlock Text="EXPORT TO CSV" Style="{StaticResource Overline}" Margin="0,4,0,8"/>
+                            <WrapPanel>
+                                <Button Style="{StaticResource SecondaryButton}" ui:Ext.Icon="FileDown" Content="ATTEMPTS" Command="{Binding ExportCommand}" CommandParameter="attempts" Margin="0,0,8,8"/>
+                                <Button Style="{StaticResource SecondaryButton}" ui:Ext.Icon="FileDown" Content="IPS" Command="{Binding ExportCommand}" CommandParameter="ips" Margin="0,0,8,8"/>
+                                <Button Style="{StaticResource SecondaryButton}" ui:Ext.Icon="FileDown" Content="BANS" Command="{Binding ExportCommand}" CommandParameter="bans" Margin="0,0,8,8"/>
+                            </WrapPanel>
+                            <TextBlock Text="BACKUP" Style="{StaticResource Overline}" Margin="0,8,0,8"/>
+                            <WrapPanel>
+                                <Button Style="{StaticResource SecondaryButton}" ui:Ext.Icon="Download" Content="CREATE BACKUP" Command="{Binding BackupCommand}" Margin="0,0,8,8"/>
+                                <Button Style="{StaticResource SecondaryButton}" ui:Ext.Icon="Upload" Content="RESTORE" Command="{Binding RestoreCommand}" Margin="0,0,8,8"/>
+                                <Button Style="{StaticResource GhostButton}" ui:Ext.Icon="Database" Content="DATA FOLDER" Command="{Binding OpenDataFolderCommand}" Margin="0,0,8,8"/>
+                                <Button Style="{StaticResource GhostButton}" ui:Ext.Icon="ScrollText" Content="LOGS" Command="{Binding OpenLogsFolderCommand}" Margin="0,0,8,8"/>
+                            </WrapPanel>
+                            <TextBlock Style="{StaticResource Caption}" Text="An automatic backup is taken every day (the last 7 are kept)."/>
+
+                            <Rectangle Height="1" Fill="{StaticResource LineBrush}" Margin="0,16"/>
+                            <TextBlock Text="MIGRATE FROM OWLSAMBA v1" Style="{StaticResource Overline}" Margin="0,0,0,8"/>
+                            <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,10"
+                                       Text="Imports banned_ips.json / IP_History.json, DataBase.db and .env / config.env from the previous (Python) version, and replaces its SMB_block_* firewall rules."/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox Text="{Binding MigratePath, UpdateSourceTrigger=PropertyChanged}" ui:Ext.Placeholder="Folder or file from the previous version" FontSize="12"/>
+                                <Button Grid.Column="1" Style="{StaticResource GhostButton}" ui:Ext.Icon="HardDrive" ToolTip="Browse…" Command="{Binding BrowseLegacyCommand}" Margin="6,0,0,0"/>
+                            </Grid>
+                            <Button Style="{StaticResource PrimaryButton}" ui:Ext.Icon="Upload" Content="IMPORT DATA" Command="{Binding MigrateCommand}" HorizontalAlignment="Left" Margin="0,10,0,0"/>
+                            <TextBlock Text="{Binding MigrationResult}" Style="{StaticResource Label}" Margin="0,10,0,0" Visibility="{Binding MigrationResult, Converter={StaticResource Vis}}"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Section}">
+                        <StackPanel>
+                            <ContentControl Style="{StaticResource CardTitle}" Content="SERVICE"/>
+                            <TextBlock Style="{StaticResource Label}">
+                                <Run Text="Version"/> <Run Text="{Binding Shell.Status.Version, Mode=OneWay}" Foreground="{StaticResource TextBrush}"/>
+                                <Run Text=" · running since"/> <Run Text="{Binding Shell.Status.StartedAt, Converter={StaticResource Time}, ConverterParameter=full, Mode=OneWay}" Foreground="{StaticResource TextBrush}"/>
+                            </TextBlock>
+                            <WrapPanel Margin="0,12,0,0">
+                                <Button Style="{StaticResource SecondaryButton}" ui:Ext.Icon="RefreshCw" Content="RESTART SERVICE" Command="{Binding RestartServiceCommand}" Margin="0,0,8,8"/>
+                                <Button Style="{StaticResource DangerButton}" ui:Ext.Icon="Power" Content="UNINSTALL" Command="{Binding UninstallServiceCommand}" Margin="0,0,8,8"/>
+                            </WrapPanel>
+                            <Button Style="{StaticResource GhostButton}" ui:Ext.Icon="History" Content="RESET POLICY TO DEFAULTS" Command="{Binding RestoreDefaultsCommand}" HorizontalAlignment="Left"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

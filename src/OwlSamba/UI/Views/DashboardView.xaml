@@ -1,0 +1,256 @@
+<UserControl x:Class="OwlSamba.UI.Views.DashboardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="clr-namespace:OwlSamba.UI">
+    <UserControl.Resources>
+        <!-- KPI tile -->
+        <Style x:Key="Tile" TargetType="ContentControl">
+            <Setter Property="Margin" Value="0,0,14,0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ContentControl">
+                        <ui:ChamferBorder Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
+                                          Chamfer="14" Padding="18,16">
+                            <ContentPresenter/>
+                        </ui:ChamferBorder>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="TileIcon" TargetType="Border">
+            <Setter Property="Width" Value="32"/>
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="CornerRadius" Value="2"/>
+            <Setter Property="Background" Value="{StaticResource AccentSoftBrush}"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+            <Setter Property="VerticalAlignment" Value="Top"/>
+        </Style>
+
+        <DataTemplate x:Key="TopRow">
+            <Grid Margin="0,0,0,9">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal">
+                    <Border Style="{StaticResource Pill}" Margin="0,0,8,0" Padding="0,1" Width="28"
+                            Visibility="{Binding CountryCode, Converter={StaticResource Vis}}">
+                        <TextBlock Text="{Binding CountryCode}" Style="{StaticResource PillText}" FontSize="9.5" HorizontalAlignment="Center"/>
+                    </Border>
+                    <Button Style="{StaticResource IpLink}" Content="{Binding Key}"
+                            Command="{Binding DataContext.Shell.OpenIpCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                            CommandParameter="{Binding Key}"/>
+                </StackPanel>
+                <TextBlock Grid.Column="1" Text="{Binding Count}" FontFamily="{StaticResource DisplayFont}" Foreground="{StaticResource AccentBrush}"/>
+            </Grid>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- ================================================= KPI tiles -->
+        <UniformGrid Columns="4" Margin="0,0,-14,18">
+            <ContentControl Style="{StaticResource Tile}">
+                <Grid>
+                    <Border Style="{StaticResource TileIcon}"><ui:LucideIcon Kind="Fingerprint" Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+                    <StackPanel>
+                        <TextBlock Text="FAILED ATTEMPTS · 24 H" Style="{StaticResource Overline}"/>
+                        <TextBlock Text="{Binding Attempts24h, StringFormat=N0}" Style="{StaticResource BigNumber}" Margin="0,8,0,0"/>
+                        <TextBlock Text="{Binding AttemptsTotal, StringFormat=All time: {0:N0}}" Style="{StaticResource Caption}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Grid>
+            </ContentControl>
+            <ContentControl Style="{StaticResource Tile}">
+                <Grid>
+                    <Border Style="{StaticResource TileIcon}"><ui:LucideIcon Kind="Globe" Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+                    <StackPanel>
+                        <TextBlock Text="ATTACKING IPS · 24 H" Style="{StaticResource Overline}"/>
+                        <TextBlock Text="{Binding UniqueIps24h, StringFormat=N0}" Style="{StaticResource BigNumber}" Margin="0,8,0,0"/>
+                        <TextBlock Text="{Binding LastAttemptAt, Converter={StaticResource Relative}, StringFormat=Last attempt: {0}}" Style="{StaticResource Caption}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Grid>
+            </ContentControl>
+            <ContentControl Style="{StaticResource Tile}">
+                <Grid>
+                    <Border Style="{StaticResource TileIcon}"><ui:LucideIcon Kind="Timer" Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+                    <StackPanel>
+                        <TextBlock Text="TEMPORARY BLOCKS" Style="{StaticResource Overline}"/>
+                        <TextBlock Text="{Binding ActiveTempBans, StringFormat=N0}" Style="{StaticResource BigNumber}" Margin="0,8,0,0" Foreground="{StaticResource AccentBrush}"/>
+                        <TextBlock Text="{Binding Bans24h, StringFormat=Bans in 24 h: {0:N0}}" Style="{StaticResource Caption}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Grid>
+            </ContentControl>
+            <ContentControl Style="{StaticResource Tile}">
+                <Grid>
+                    <Border Style="{StaticResource TileIcon}" Background="{StaticResource DangerSoftBrush}"><ui:LucideIcon Kind="ShieldBan" Foreground="{StaticResource DangerBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+                    <StackPanel>
+                        <TextBlock Text="PERMANENT BANS" Style="{StaticResource Overline}"/>
+                        <TextBlock Text="{Binding PermanentBans, StringFormat=N0}" Style="{StaticResource BigNumber}" Margin="0,8,0,0" Foreground="{StaticResource DangerBrush}"/>
+                        <TextBlock Text="Blocked in the firewall" Style="{StaticResource Caption}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Grid>
+            </ContentControl>
+        </UniformGrid>
+
+        <!-- ================================================= main area -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="18"/>
+                <ColumnDefinition Width="400"/>
+            </Grid.ColumnDefinitions>
+
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="18"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- 24h chart -->
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <ContentControl Style="{StaticResource CardTitle}" Content="ATTEMPTS PER HOUR · LAST 24 H"/>
+                        <ItemsControl ItemsSource="{Binding Hours}" Height="172">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><UniformGrid Rows="1"/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Background="Transparent" ToolTip="{Binding Tooltip}" Margin="2,0">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="*"/>
+                                            <RowDefinition Height="20"/>
+                                        </Grid.RowDefinitions>
+                                        <Rectangle Height="{Binding Height}" VerticalAlignment="Bottom" x:Name="bar" Fill="{StaticResource AccentBrush}" Opacity="0.85"/>
+                                        <TextBlock Grid.Row="1" Text="{Binding Label}" Style="{StaticResource Caption}" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                                                   TextWrapping="NoWrap" Margin="-24,0" TextAlignment="Center"
+                                                   Visibility="{Binding ShowLabel, Converter={StaticResource Vis}}"/>
+                                    </Grid>
+                                    <DataTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="bar" Property="Opacity" Value="1"/>
+                                            <Setter TargetName="bar" Property="Fill" Value="{StaticResource AccentHoverBrush}"/>
+                                        </Trigger>
+                                    </DataTemplate.Triggers>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <!-- top lists -->
+                <Grid Grid.Row="2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition/>
+                        <ColumnDefinition Width="18"/>
+                        <ColumnDefinition/>
+                    </Grid.ColumnDefinitions>
+                    <Border Style="{StaticResource Card}">
+                        <DockPanel>
+                            <ContentControl DockPanel.Dock="Top" Style="{StaticResource CardTitle}" Content="TOP ATTACKING IPS · 24 H"/>
+                            <Grid>
+                                <TextBlock Text="No attempts in the last 24 hours" Style="{StaticResource Caption}"
+                                           Visibility="{Binding TopIps.Count, Converter={StaticResource Vis}, ConverterParameter=invert}"/>
+                                <ItemsControl ItemsSource="{Binding TopIps}" ItemTemplate="{StaticResource TopRow}"/>
+                            </Grid>
+                        </DockPanel>
+                    </Border>
+                    <Border Grid.Column="2" Style="{StaticResource Card}">
+                        <DockPanel>
+                            <ContentControl DockPanel.Dock="Top" Style="{StaticResource CardTitle}" Content="MOST TARGETED USERNAMES · 24 H"/>
+                            <Grid>
+                                <TextBlock Text="No attempts in the last 24 hours" Style="{StaticResource Caption}"
+                                           Visibility="{Binding TopUsers.Count, Converter={StaticResource Vis}, ConverterParameter=invert}"/>
+                                <ItemsControl ItemsSource="{Binding TopUsers}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,0,0,9">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <ui:LucideIcon Kind="User" Size="13" Foreground="{StaticResource Text3Brush}" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="{Binding Key}" TextTrimming="CharacterEllipsis"/>
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="1" Text="{Binding Count}" FontFamily="{StaticResource DisplayFont}" Foreground="{StaticResource AccentBrush}"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Grid>
+                        </DockPanel>
+                    </Border>
+                </Grid>
+            </Grid>
+
+            <!-- live feed -->
+            <Border Grid.Column="2" Style="{StaticResource Card}" Padding="0">
+                <DockPanel>
+                    <Grid DockPanel.Dock="Top" Margin="18,18,18,10">
+                        <ContentControl Style="{StaticResource CardTitle}" Content="LIVE" Margin="0"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <Ellipse Width="7" Height="7" Fill="{StaticResource DangerBrush}" VerticalAlignment="Center">
+                                <Ellipse.Triggers>
+                                    <EventTrigger RoutedEvent="Loaded">
+                                        <BeginStoryboard>
+                                            <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                                <DoubleAnimation Storyboard.TargetProperty="Opacity" From="1" To="0.25" Duration="0:0:0.9"/>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </EventTrigger>
+                                </Ellipse.Triggers>
+                            </Ellipse>
+                            <TextBlock Text="STREAM" Style="{StaticResource Overline}" Margin="6,0,0,0"/>
+                        </StackPanel>
+                    </Grid>
+                    <Grid>
+                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
+                                    Visibility="{Binding Feed.Count, Converter={StaticResource Vis}, ConverterParameter=invert}">
+                            <ui:LucideIcon Kind="ShieldCheck" Size="32" Foreground="{StaticResource Text3Brush}" StrokeThickness="1.5"/>
+                            <TextBlock Text="All quiet. Attempts will show up here instantly." Style="{StaticResource Caption}" Margin="0,10,0,0"/>
+                        </StackPanel>
+                        <ListBox ItemsSource="{Binding Feed}" VirtualizingPanel.ScrollUnit="Pixel">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,0,0,1" Height="56">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="3"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Rectangle Fill="{Binding Tone, Converter={StaticResource StatusBrush}}"/>
+                                        <ui:LucideIcon Grid.Column="1" Kind="{Binding Icon}" Size="16" Margin="15,0,12,0" VerticalAlignment="Center"
+                                                       Foreground="{Binding Tone, Converter={StaticResource StatusBrush}}"/>
+                                        <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Title}" FontFamily="{StaticResource DisplayFont}" FontSize="12.5" TextTrimming="CharacterEllipsis"/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                                                <Border Style="{StaticResource Pill}" Margin="0,0,7,0" Padding="4,0"
+                                                        Visibility="{Binding CountryCode, Converter={StaticResource Vis}}">
+                                                    <TextBlock Text="{Binding CountryCode}" Style="{StaticResource PillText}" FontSize="9"/>
+                                                </Border>
+                                                <Button Style="{StaticResource IpLink}" Content="{Binding Ip}" Foreground="{StaticResource Text2Brush}"
+                                                        Command="{Binding DataContext.Shell.OpenIpCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                        CommandParameter="{Binding Ip}"/>
+                                                <TextBlock Text="{Binding Detail, StringFormat=' · {0}'}" Style="{StaticResource Caption}" TextTrimming="CharacterEllipsis"
+                                                           TextWrapping="NoWrap" MaxWidth="170" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="3" Text="{Binding At, Converter={StaticResource Time}}" Style="{StaticResource Caption}"
+                                                   Margin="10,0,16,0" VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Grid>
+                </DockPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

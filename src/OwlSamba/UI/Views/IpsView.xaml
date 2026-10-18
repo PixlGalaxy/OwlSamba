@@ -1,0 +1,220 @@
+<UserControl x:Class="OwlSamba.UI.Views.IpsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="clr-namespace:OwlSamba.UI">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="18"/>
+            <ColumnDefinition Width="420"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- ================================================= list -->
+        <DockPanel>
+            <Grid DockPanel.Dock="Top" Margin="0,0,0,14">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Grid>
+                    <TextBox Text="{Binding Query, UpdateSourceTrigger=PropertyChanged}" Padding="32,0,9,0"
+                             ui:Ext.Placeholder="Search IP, user, workstation, country, ISP or note…"/>
+                    <ui:LucideIcon Kind="Search" Size="15" Foreground="{StaticResource Text3Brush}" HorizontalAlignment="Left" Margin="11,0,0,0" IsHitTestVisible="False"/>
+                </Grid>
+                <ComboBox Grid.Column="1" ItemsSource="{Binding StatusFilters}" SelectedItem="{Binding StatusFilter}" Margin="10,0,0,0" Width="140"/>
+                <ComboBox Grid.Column="2" ItemsSource="{Binding Sorts}" SelectedItem="{Binding Sort}" Margin="10,0,0,0" Width="160"/>
+            </Grid>
+
+            <!-- unknown IP typed: offer a direct ban -->
+            <Border DockPanel.Dock="Top" Style="{StaticResource Card}" Margin="0,0,0,14" Padding="16,12"
+                    BorderBrush="{StaticResource AccentBrush}" Visibility="{Binding UnknownQueryIp, Converter={StaticResource Vis}}">
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Style="{StaticResource DangerButton}" ui:Ext.Icon="Ban" Content="BAN THIS IP"
+                            Command="{Binding BanCommand}" CommandParameter="{Binding UnknownQueryIp}"/>
+                    <ComboBox DockPanel.Dock="Right" ItemsSource="{Binding DurationChoices}" SelectedItem="{Binding BanDuration}" Width="140" Margin="0,0,10,0"/>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <ui:LucideIcon Kind="Info" Foreground="{StaticResource AccentBrush}" Margin="0,0,10,0"/>
+                        <TextBlock VerticalAlignment="Center" Foreground="{StaticResource Text2Brush}">
+                            <Run Text="No records for"/> <Run Text="{Binding UnknownQueryIp, Mode=OneWay}" FontFamily="{StaticResource MonoFont}" Foreground="{StaticResource TextBrush}"/><Run Text=". You can ban it preemptively."/>
+                        </TextBlock>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <Grid DockPanel.Dock="Bottom" Margin="0,10,0,0">
+                <TextBlock Text="{Binding PageLabel}" Style="{StaticResource Caption}" VerticalAlignment="Center"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Style="{StaticResource SecondaryButton}" Content="PREVIOUS" Command="{Binding PrevPageCommand}" IsEnabled="{Binding HasPrev}" Height="30"/>
+                    <Button Style="{StaticResource SecondaryButton}" Content="NEXT" Command="{Binding NextPageCommand}" IsEnabled="{Binding HasNext}" Height="30" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Grid>
+
+            <Border Style="{StaticResource Card}" Padding="0">
+                <DataGrid ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}" CanUserSortColumns="False">
+                    <DataGrid.Columns>
+                        <DataGridTemplateColumn Header="IP" Width="210">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Rectangle Width="3" Height="16" Margin="0,0,10,0" Fill="{Binding BanKind, Converter={StaticResource StatusBrush}}"
+                                                   Visibility="{Binding BanKind, Converter={StaticResource Vis}}"/>
+                                        <TextBlock Text="{Binding Ip}" Style="{StaticResource Mono}"/>
+                                        <ui:LucideIcon Kind="TriangleAlert" Size="13" Foreground="{StaticResource WarnBrush}" Margin="8,0,0,0"
+                                                       Visibility="{Binding SuspiciousAt, Converter={StaticResource Vis}}" ToolTip="Successful logon after failed attempts"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="COUNTRY" Width="*" MinWidth="110">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Country}" Foreground="{StaticResource Text2Brush}" TextTrimming="CharacterEllipsis"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="ATTEMPTS" Binding="{Binding TotalAttempts}" Width="105">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="FontFamily" Value="{StaticResource DisplayFont}"/>
+                                    <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="LAST USER" Binding="{Binding LastUser}" Width="150"/>
+                        <DataGridTemplateColumn Header="LAST SEEN" Width="120">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding LastSeen, Converter={StaticResource Relative}}" Foreground="{StaticResource Text2Brush}"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Border>
+        </DockPanel>
+
+        <!-- ================================================= detail -->
+        <Border Grid.Column="2" Style="{StaticResource Card}" Padding="0">
+            <Grid>
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
+                            Visibility="{Binding Detail, Converter={StaticResource Vis}, ConverterParameter=invert}">
+                    <ui:LucideIcon Kind="Search" Size="30" Foreground="{StaticResource Text3Brush}" StrokeThickness="1.5"/>
+                    <TextBlock Text="Select an IP to see its history" Style="{StaticResource Caption}" Margin="0,10,0,0"/>
+                </StackPanel>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Visibility="{Binding Detail, Converter={StaticResource Vis}}">
+                    <StackPanel Margin="20">
+                        <!-- header -->
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" ui:Ext.Icon="Copy" Command="{Binding CopyIpCommand}" ToolTip="Copy IP" Height="30"/>
+                            <TextBlock Text="{Binding Detail.Record.Ip}" FontFamily="{StaticResource MonoFont}" FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                        </DockPanel>
+                        <Border Style="{StaticResource Pill}" Margin="0,8,0,0" Background="{StaticResource Panel2Brush}">
+                            <TextBlock Text="{Binding SelectedState}" Style="{StaticResource PillText}" Foreground="{Binding Detail.Record.BanKind, Converter={StaticResource StatusBrush}}"/>
+                        </Border>
+                        <TextBlock Text="{Binding Detail.Record.BanReason}" Style="{StaticResource Caption}" Margin="0,6,0,0"
+                                   Visibility="{Binding SelectedIsBanned, Converter={StaticResource Vis}}"/>
+
+                        <!-- facts -->
+                        <Grid Margin="0,18,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110"/>
+                                <ColumnDefinition/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                            </Grid.RowDefinitions>
+                            <Grid.Resources>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource Label}">
+                                    <Setter Property="Margin" Value="0,0,0,8"/>
+                                </Style>
+                            </Grid.Resources>
+                            <TextBlock Text="Country"/>
+                            <TextBlock Grid.Column="1" Text="{Binding Detail.Record.Country, FallbackValue=—, TargetNullValue=—}" Foreground="{StaticResource TextBrush}"/>
+                            <TextBlock Grid.Row="1" Text="ISP"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Detail.Record.Isp, TargetNullValue=—}" Foreground="{StaticResource TextBrush}"/>
+                            <TextBlock Grid.Row="2" Text="Attempts"/>
+                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Detail.Record.TotalAttempts}" Foreground="{StaticResource AccentBrush}" FontFamily="{StaticResource DisplayFont}"/>
+                            <TextBlock Grid.Row="3" Text="First seen"/>
+                            <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Detail.Record.FirstSeen, Converter={StaticResource Time}, ConverterParameter=full}" Foreground="{StaticResource TextBrush}"/>
+                            <TextBlock Grid.Row="4" Text="Last seen"/>
+                            <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Detail.Record.LastSeen, Converter={StaticResource Time}, ConverterParameter=full}" Foreground="{StaticResource TextBrush}"/>
+                            <TextBlock Grid.Row="5" Text="Last user"/>
+                            <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding Detail.Record.LastUser, TargetNullValue=—}" Foreground="{StaticResource TextBrush}"/>
+                            <TextBlock Grid.Row="6" Text="Times banned"/>
+                            <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding Detail.Record.BanCount}" Foreground="{StaticResource TextBrush}"/>
+                        </Grid>
+
+                        <!-- actions -->
+                        <Rectangle Height="1" Fill="{StaticResource LineBrush}" Margin="0,8,0,16"/>
+                        <TextBlock Text="ACTIONS" Style="{StaticResource Overline}" Margin="0,0,0,10"/>
+                        <StackPanel Visibility="{Binding SelectedIsBanned, Converter={StaticResource Vis}, ConverterParameter=invert}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition/>
+                                    <ColumnDefinition Width="10"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ComboBox ItemsSource="{Binding DurationChoices}" SelectedItem="{Binding BanDuration}"/>
+                                <Button Grid.Column="2" Style="{StaticResource DangerButton}" ui:Ext.Icon="Ban" Content="BAN" Command="{Binding BanCommand}"/>
+                            </Grid>
+                            <TextBox Text="{Binding BanReason, UpdateSourceTrigger=PropertyChanged}" ui:Ext.Placeholder="Reason (optional)" Margin="0,8,0,0"/>
+                        </StackPanel>
+                        <StackPanel Visibility="{Binding SelectedIsBanned, Converter={StaticResource Vis}}">
+                            <Button Style="{StaticResource PrimaryButton}" ui:Ext.Icon="LockOpen" Content="UNBAN" Command="{Binding UnbanCommand}" HorizontalAlignment="Stretch"/>
+                            <CheckBox IsChecked="{Binding ResetCounters}" Content="Reset attempt counter" Margin="0,10,0,0"/>
+                        </StackPanel>
+                        <Button Style="{StaticResource SecondaryButton}" ui:Ext.Icon="ShieldCheck" Content="ADD TO WHITELIST" Command="{Binding WhitelistCommand}"
+                                HorizontalAlignment="Stretch" Margin="0,10,0,0"
+                                Visibility="{Binding Detail.Record.Whitelisted, Converter={StaticResource Vis}, ConverterParameter=invert}"/>
+
+                        <!-- notes -->
+                        <TextBlock Text="NOTES" Style="{StaticResource Overline}" Margin="0,20,0,8"/>
+                        <TextBox Text="{Binding Notes, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="60"
+                                 VerticalContentAlignment="Top" Padding="9,7" ui:Ext.Placeholder="Internal notes about this IP…"/>
+                        <Button Style="{StaticResource GhostButton}" ui:Ext.Icon="Save" Content="SAVE NOTE" Command="{Binding SaveNotesCommand}" HorizontalAlignment="Right" Margin="0,6,0,0" Height="28"/>
+
+                        <!-- history -->
+                        <TextBlock Text="BAN HISTORY" Style="{StaticResource Overline}" Margin="0,16,0,8"/>
+                        <TextBlock Text="Never banned" Style="{StaticResource Caption}"
+                                   Visibility="{Binding Detail.Bans.Count, Converter={StaticResource Vis}, ConverterParameter=invert}"/>
+                        <ItemsControl ItemsSource="{Binding Detail.Bans}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderBrush="{Binding Kind, Converter={StaticResource StatusBrush}}" BorderThickness="2,0,0,0" Padding="10,4" Margin="0,0,0,6">
+                                        <StackPanel>
+                                            <TextBlock Style="{StaticResource Label}" Foreground="{StaticResource TextBrush}">
+                                                <Run Text="{Binding StartedAt, Converter={StaticResource Time}, ConverterParameter=full, Mode=OneWay}"/>
+                                                <Run Text=" · "/><Run Text="{Binding Kind, Mode=OneWay}" Foreground="{StaticResource Text2Brush}"/>
+                                            </TextBlock>
+                                            <TextBlock Text="{Binding Reason}" Style="{StaticResource Caption}"/>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <TextBlock Text="RECENT ATTEMPTS" Style="{StaticResource Overline}" Margin="0,16,0,8"/>
+                        <ItemsControl ItemsSource="{Binding Detail.Attempts}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,0,0,5">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="128"/>
+                                            <ColumnDefinition/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding OccurredAt, Converter={StaticResource Time}, ConverterParameter=full}" Style="{StaticResource Caption}" FontFamily="{StaticResource MonoFont}"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding User}" Style="{StaticResource Label}" Foreground="{StaticResource TextBrush}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Source, Converter={StaticResource Source}}" Style="{StaticResource Caption}"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>
